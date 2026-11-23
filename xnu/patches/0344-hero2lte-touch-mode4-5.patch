@@ -1,0 +1,34 @@
+diff --git a/bsd/dev/herolte_touch.c b/bsd/dev/herolte_touch.c
+--- a/bsd/dev/herolte_touch.c
++++ b/bsd/dev/herolte_touch.c
+@@ -789,7 +789,7 @@
+ 	 */
+ 	int mode = 1;
+ 	PE_parse_boot_argn("herotouch", &mode, sizeof(mode));
+-	if (mode == 3) {
++	if (mode >= 3) {
+ 		/*
+ 		 * hero2lte / G935FXXS8ETCM: S-Boot leaves tsp_io/tsp_avdd on and
+ 		 * the sec_ts at 0x48 already booted (TWRP and Linux use it).
+@@ -799,6 +799,10 @@
+ 		 */
+ 		int pm_mode = 0;
+ 		PE_parse_boot_argn("heropmic", &pm_mode, sizeof(pm_mode));
++		if (mode == 5) {
++			ht_apm_probe();
++			printf("HEROLTE TOUCH: APM probe done (mode 5)\n");
++		}
+ 		printf("HEROLTE PMIC STD: ctl=%#x int=%#x conf=%#x trans=%#x batcher=%#x\n",
+ 		    ht_rd(ht_pm, HSI2C_CTL), ht_rd(ht_pm, HSI2C_INT_STAT),
+ 		    ht_rd(ht_pm, HSI2C_CONF), ht_rd(ht_pm, HSI2C_TRANS),
+@@ -829,6 +833,10 @@
+ 			}
+ 		}
+ 		printf("HEROLTE TOUCH: skipping APM/batcher PMIC power-on (hero2lte)\n");
++		if (mode == 4) {
++			printf("HEROLTE TOUCH: power-only mode (herotouch=4), stopping before HID\n");
++			return;
++		}
+ 	} else {
+ 		ht_apm_probe();
+ 		/* 1 (default): APM mailbox; 2: the HSI2C batcher. */
