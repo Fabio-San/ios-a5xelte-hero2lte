@@ -216,3 +216,5 @@ jobs:
               print('::error title=LSE in kernel::' + msg.replace('%', '%25').replace('\n', '%0A'))
               sys.exit(1)
           PY
+
+# hero2lte private fork - build trigger
