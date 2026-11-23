@@ -1,0 +1,13 @@
+diff --git a/bsd/dev/herolte_battery.c b/bsd/dev/herolte_battery.c
+--- a/bsd/dev/herolte_battery.c
++++ b/bsd/dev/herolte_battery.c
+@@ -25,6 +25,9 @@
+ #include <miscfs/devfs/devfs.h>
+ 
+ extern vm_offset_t ml_io_map(vm_offset_t, vm_size_t);
++/* hero2lte: PMIC standard I2C (l'APM non risponde); esportati da herolte_touch.c */
++bool herolte_std_pmic_read(uint8_t reg, uint8_t *value);
++bool herolte_std_pmic_write(uint8_t reg, uint8_t value);
+ int herolte_fg_init(void);
+ int herolte_fg_read(unsigned *percent, unsigned *mv, int *ma, unsigned *rem_mah, unsigned *full_mah);
+ 
