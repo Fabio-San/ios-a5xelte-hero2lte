@@ -1,0 +1,28 @@
+diff --git a/bsd/dev/herolte_touch.c b/bsd/dev/herolte_touch.c
+--- a/bsd/dev/herolte_touch.c
++++ b/bsd/dev/herolte_touch.c
+@@ -699,16 +699,16 @@
+ 	ht_wr(ht_pm, HSI2C_SLA, pm_saved_sla);
+ 	ht_wr(ht_pm, HSI2C_TRAILING, pm_saved_trailing);
+ 	ht_wr(ht_pm, HSI2C_CONF, pm_saved_conf);
++	/* Ripristina AUTO_CONF (0x300ff su questa board): senza questo il
++	 * master resta fermo e il DVFS GPU/CPU si blocca. */
++	ht_wr(ht_pm, HSI2C_AUTO_CONF, pm_saved_auto_conf);
+ 	ht_wr(ht_pm, 0x500, pm_saved_batcher);
+-
+-	/* CTL per ultimo, con read-modify-write come i2c-exynos5.c:
+-	 * HSI2C_CTL bit3 = MASTER, bit31 = SW_RST (auto-clear). */
++	ht_wr(ht_pm, HSI2C_CTL, pm_saved_ctl);
++	delay(1000);
++
++	/* CTL: il bit MASTER (bit3) e' quello che conta; bit7 e' di stato. */
+ 	ctl = ht_rd(ht_pm, HSI2C_CTL);
+-	ctl &= ~(1u << 31);
+-	ctl = (ctl & ~(1u << 3)) | (pm_saved_ctl & (1u << 3));
+-	ht_wr(ht_pm, HSI2C_CTL, ctl);
+-	delay(1000);
+-	if (!(ht_rd(ht_pm, HSI2C_CTL) & (1u << 3))) {
++	if (!(ctl & (1u << 3))) {
+ 		ht_wr(ht_pm, HSI2C_CTL, pm_saved_ctl);
+ 		delay(1000);
+ 	}
