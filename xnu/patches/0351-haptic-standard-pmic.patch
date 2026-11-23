@@ -1,0 +1,55 @@
+diff --git a/bsd/dev/herolte_touch.c b/bsd/dev/herolte_touch.c
+--- a/bsd/dev/herolte_touch.c
++++ b/bsd/dev/herolte_touch.c
+@@ -747,6 +747,27 @@
+ {
+ 	uint8_t b[2] = { reg, value };
+ 	return pm_std_msg(false, b, 2);
++}
++
++/* Esportato per gli altri driver (es. haptic in herolte_battery.c): su
++ * hero2lte l'APM non risponde, quindi usano l'I2C standard su 0x10550000. */
++bool herolte_std_pmic_read(uint8_t reg, uint8_t *value);
++bool herolte_std_pmic_write(uint8_t reg, uint8_t value);
++bool
++herolte_std_pmic_read(uint8_t reg, uint8_t *value)
++{
++	pm_std_init();
++	bool ok = pm_std_read(reg, value);
++	pm_std_restore();
++	return ok;
++}
++bool
++herolte_std_pmic_write(uint8_t reg, uint8_t value)
++{
++	pm_std_init();
++	bool ok = pm_std_write(reg, value);
++	pm_std_restore();
++	return ok;
+ }
+ 
+ static unsigned ht_moves, ht_retries, ht_lost;
+diff --git a/bsd/dev/herolte_battery.c b/bsd/dev/herolte_battery.c
+--- a/bsd/dev/herolte_battery.c
++++ b/bsd/dev/herolte_battery.c
+@@ -483,7 +483,7 @@
+ 	uint8_t l34 = 0;
+ 	bool ldo = false;
+ 	for (unsigned t = 0; t < 60 && !ldo; t++) {
+-		ldo = herolte_apm_pmic_read(S2MPS16_L34CTRL, &l34);
++		ldo = herolte_std_pmic_read(S2MPS16_L34CTRL, &l34);
+ 		if (!ldo) {
+ 			hap_sleep_ms(1000);             /* the touch thread starts the APM */
+ 		}
+@@ -497,9 +497,9 @@
+ 		return false;
+ 	}
+ 	if ((l34 & 0xc0u) != 0xc0u || (l34 & 0x3fu) != 0x3cu) {
+-		bool w = herolte_apm_pmic_write(S2MPS16_L34CTRL, 0xc0u | 0x3cu);
++		bool w = herolte_std_pmic_write(S2MPS16_L34CTRL, 0xc0u | 0x3cu);
+ 		uint8_t now = 0;
+-		(void)herolte_apm_pmic_read(S2MPS16_L34CTRL, &now);
++		(void)herolte_std_pmic_read(S2MPS16_L34CTRL, &now);
+ 		printf("HEROLTE HAPTIC: VDD_MOT_3.3V (LDO34) %#x -> %#x%s\n", l34, now, w ? "" : " (the write was refused)");
+ 		if ((now & 0xc0u) != 0xc0u) {
+ 			return false;
