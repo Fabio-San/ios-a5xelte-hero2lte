@@ -1,0 +1,52 @@
+diff --git a/bsd/dev/herolte_touch.c b/bsd/dev/herolte_touch.c
+--- a/bsd/dev/herolte_touch.c
++++ b/bsd/dev/herolte_touch.c
+@@ -680,12 +680,17 @@
+ static void
+ pm_std_restore(void)
+ {
++	uint32_t ctl;
++
+ 	if (!pm_saved) {
+ 		return;
+ 	}
++	/* Ferma il master e lascia finire qualsiasi transazione in corso
++	 * prima di riscrivere i registri (come fa exynos5_i2c_reset). */
+ 	ht_wr(ht_pm, HSI2C_INT_EN, 0);
+-	ht_wr(ht_pm, HSI2C_CTL, 0x80000009u);
+-	ht_wr(ht_pm, HSI2C_CTL, pm_saved_ctl);
++	ht_wr(ht_pm, HSI2C_AUTO_CONF, 0);
++	delay(1000);
++
+ 	ht_wr(ht_pm, HSI2C_FIFO_CTL, pm_saved_fifo_ctl);
+ 	ht_wr(ht_pm, HSI2C_TIMEOUT, pm_saved_timeout);
+ 	ht_wr(ht_pm, HSI2C_FS1, pm_saved_fs1);
+@@ -694,12 +699,24 @@
+ 	ht_wr(ht_pm, HSI2C_SLA, pm_saved_sla);
+ 	ht_wr(ht_pm, HSI2C_TRAILING, pm_saved_trailing);
+ 	ht_wr(ht_pm, HSI2C_CONF, pm_saved_conf);
+-	ht_wr(ht_pm, HSI2C_AUTO_CONF, pm_saved_auto_conf);
+-	ht_wr(ht_pm, HSI2C_TRANS, pm_saved_trans);
+ 	ht_wr(ht_pm, 0x500, pm_saved_batcher);
++
++	/* CTL per ultimo, con read-modify-write come i2c-exynos5.c:
++	 * HSI2C_CTL bit3 = MASTER, bit31 = SW_RST (auto-clear). */
++	ctl = ht_rd(ht_pm, HSI2C_CTL);
++	ctl &= ~(1u << 31);
++	ctl = (ctl & ~(1u << 3)) | (pm_saved_ctl & (1u << 3));
++	ht_wr(ht_pm, HSI2C_CTL, ctl);
++	delay(1000);
++	if (!(ht_rd(ht_pm, HSI2C_CTL) & (1u << 3))) {
++		ht_wr(ht_pm, HSI2C_CTL, pm_saved_ctl);
++		delay(1000);
++	}
+ 	ht_wr(ht_pm, HSI2C_INT_EN, pm_saved_int_en);
+-	printf("HEROLTE PMIC STD: restored ctl=%#x conf=%#x batcher=%#x\n",
+-	    ht_rd(ht_pm, HSI2C_CTL), ht_rd(ht_pm, HSI2C_CONF), ht_rd(ht_pm, 0x500));
++	printf("HEROLTE PMIC STD: restored ctl=%#x (saved %#x) conf=%#x batcher=%#x auto=%#x trans=%#x\n",
++	    ht_rd(ht_pm, HSI2C_CTL), pm_saved_ctl,
++	    ht_rd(ht_pm, HSI2C_CONF), ht_rd(ht_pm, 0x500),
++	    pm_saved_auto_conf, pm_saved_trans);
+ 	pm_saved = false;
+ }
+ 
