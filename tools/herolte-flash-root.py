@@ -89,7 +89,7 @@ def main():
             return
         n = (end - first) * CHUNK // MIB
         adb(['shell', f'dd if=/dev/zero of={DEV} bs=1048576 seek={first * CHUNK // MIB} '
-             f'count={n} conv=fsync 2>/dev/null'], a.adb)
+             f'count={n} 2>/dev/null; sync'], a.adb)
         for i in range(first, end):
             state.write(f'{i}\n')
         state.flush()
@@ -128,7 +128,7 @@ def main():
                 adb(['push', local, '/tmp/chunk.gz'], a.adb)
                 seek, count = offset // MIB, (len(data) + MIB - 1) // MIB
                 out = adb(['shell', f'gzip -dc /tmp/chunk.gz | dd of={DEV} bs=1048576 '
-                           f'seek={seek} conv=fsync 2>&1; rm -f /tmp/chunk.gz'], a.adb)
+                           f'seek={seek} 2>&1; sync; rm -f /tmp/chunk.gz'], a.adb)
                 back = adb(['shell', f'dd if={DEV} bs=1048576 skip={seek} count={count} '
                             f'2>/dev/null | head -c {len(data)} | sha256sum'], a.adb).split()[0]
                 want = hashlib.sha256(data).hexdigest()
