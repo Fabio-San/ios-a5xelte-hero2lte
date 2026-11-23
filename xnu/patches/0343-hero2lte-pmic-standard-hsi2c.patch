@@ -1,0 +1,112 @@
+diff --git a/bsd/dev/herolte_touch.c b/bsd/dev/herolte_touch.c
+--- a/bsd/dev/herolte_touch.c
++++ b/bsd/dev/herolte_touch.c
+@@ -78,6 +78,7 @@
+ #define S2MPS16_ENABLE  0xc0u
+ 
+ static vm_offset_t ht_alive, ht_pins, ht_i2c, ht_pm;
++static uint8_t ht_slave = HT_ADDR;
+ static uint32_t pm_cmd_buffer;
+ static unsigned pm_cmd_index, pm_cmd_pointer, pm_desc;
+ static int ht_sleep;
+@@ -576,7 +577,7 @@
+ 	}
+ 	ht_wr(ht_i2c, HSI2C_INT_STAT, ht_rd(ht_i2c, HSI2C_INT_STAT));
+ 	ht_wr(ht_i2c, HSI2C_FIFO_CTL, 3u | (receive ? (1u << 4) : (1u << 16)));
+-	ht_wr(ht_i2c, HSI2C_ADDR, HT_ADDR << 10);
++	ht_wr(ht_i2c, HSI2C_ADDR, ht_slave << 10);
+ 	ht_wr(ht_i2c, HSI2C_CTL, 9u | (receive ? 0x40u : 0x80u));
+ 	ht_wr(ht_i2c, HSI2C_INT_EN, 0xf80u | (receive ? 0x42u : 1u));
+ 	ht_wr(ht_i2c, HSI2C_AUTO_CONF, count | (receive ? 0x10000u : 0) | 0x20000u | 0x80000000u);
+@@ -629,6 +630,51 @@
+ ht_cmd(uint8_t reg)
+ {
+ 	return ht_message(false, &reg, 1);
++}
++
++/*
++ * hero2lte: standard HSI2C access to the S2MPS16 at 0x66 on 0x10550000.
++ * The Cortex-M3 is not released and the batcher is disabled, so there is
++ * no other master on this bus: the same primitives used for the touch bus
++ * work with a different mapping and slave address.
++ */
++static void
++pm_std_init(void)
++{
++	vm_offset_t saved = ht_i2c;
++	ht_i2c = ht_pm;
++	ht_wr(ht_pm, 0x500, 0);	/* HSI2C_BATCHER_CON: disable batcher */
++	ht_bus_init();
++	ht_i2c = saved;
++}
++
++static bool
++pm_std_msg(bool receive, uint8_t *bytes, unsigned count)
++{
++	vm_offset_t saved_i2c = ht_i2c;
++	uint8_t saved_slave = ht_slave;
++	bool ok;
++
++	ht_i2c = ht_pm;
++	ht_slave = 0x66;
++	ok = ht_message(receive, bytes, count);
++	ht_i2c = saved_i2c;
++	ht_slave = saved_slave;
++	return ok;
++}
++
++static bool
++pm_std_read(uint8_t reg, uint8_t *value)
++{
++	uint8_t r = reg;
++	return pm_std_msg(false, &r, 1) && pm_std_msg(true, value, 1);
++}
++
++static bool
++pm_std_write(uint8_t reg, uint8_t value)
++{
++	uint8_t b[2] = { reg, value };
++	return pm_std_msg(false, b, 2);
+ }
+ 
+ static unsigned ht_moves, ht_retries, ht_lost;
+@@ -751,7 +797,38 @@
+ 		 * the phone at the framebuffer, so do not touch the PMIC at all:
+ 		 * re-mux the pins below and probe the chip directly.
+ 		 */
+-		printf("HEROLTE TOUCH: skipping PMIC power-on (hero2lte)\n");
++		int pm_mode = 0;
++		PE_parse_boot_argn("heropmic", &pm_mode, sizeof(pm_mode));
++		printf("HEROLTE PMIC STD: ctl=%#x int=%#x conf=%#x trans=%#x batcher=%#x\n",
++		    ht_rd(ht_pm, HSI2C_CTL), ht_rd(ht_pm, HSI2C_INT_STAT),
++		    ht_rd(ht_pm, HSI2C_CONF), ht_rd(ht_pm, HSI2C_TRANS),
++		    ht_rd(ht_pm, 0x500));
++		if (pm_mode >= 1) {
++			uint8_t id = 0;
++			pm_std_init();
++			printf("HEROLTE PMIC STD: ID %s %#x\n",
++			    pm_std_read(0x00, &id) ? "=" : "read failed", id);
++		}
++		if (pm_mode >= 2) {
++			uint8_t l32 = 0, l33 = 0;
++			if (pm_std_read(0x5c, &l32) && pm_std_read(0x5d, &l33)) {
++				printf("HEROLTE PMIC STD: L32=%#x L33=%#x\n", l32, l33);
++				if (pm_std_write(0x5c, 0x2eu | 0xc0u) &&
++				    pm_std_write(0x5d, 0x3cu | 0xc0u)) {
++					ht_msleep(10);
++					uint8_t c32 = 0, c33 = 0;
++					pm_std_read(0x5c, &c32);
++					pm_std_read(0x5d, &c33);
++					printf("HEROLTE PMIC STD: enabled L32=%#x L33=%#x; GPF1 dat=%#x\n",
++					    c32, c33, ht_rd(ht_pins, 4));
++				} else {
++					printf("HEROLTE PMIC STD: LDO write failed\n");
++				}
++			} else {
++				printf("HEROLTE PMIC STD: LDO read failed\n");
++			}
++		}
++		printf("HEROLTE TOUCH: skipping APM/batcher PMIC power-on (hero2lte)\n");
+ 	} else {
+ 		ht_apm_probe();
+ 		/* 1 (default): APM mailbox; 2: the HSI2C batcher. */
