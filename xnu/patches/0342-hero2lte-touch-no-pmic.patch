@@ -1,0 +1,33 @@
+diff --git a/bsd/dev/herolte_touch.c b/bsd/dev/herolte_touch.c
+--- a/bsd/dev/herolte_touch.c
++++ b/bsd/dev/herolte_touch.c
+@@ -743,12 +743,23 @@
+ 	 */
+ 	int mode = 1;
+ 	PE_parse_boot_argn("herotouch", &mode, sizeof(mode));
+-	ht_apm_probe();
+-	/* 1 (default): PMIC through the APM mailbox; 2: the HSI2C batcher. */
+-	bool powered = mode == 2 ? pm_touch_power_on() : apm_touch_power_on();
+-	if (!powered) {
+-		printf("HEROLTE TOUCH: no supply; stopping\n");
+-		return;
++	if (mode == 3) {
++		/*
++		 * hero2lte / G935FXXS8ETCM: S-Boot leaves tsp_io/tsp_avdd on and
++		 * the sec_ts at 0x48 already booted (TWRP and Linux use it).
++		 * The APM mailbox never answers here and the HSI2C batcher hangs
++		 * the phone at the framebuffer, so do not touch the PMIC at all:
++		 * re-mux the pins below and probe the chip directly.
++		 */
++		printf("HEROLTE TOUCH: skipping PMIC power-on (hero2lte)\n");
++	} else {
++		ht_apm_probe();
++		/* 1 (default): APM mailbox; 2: the HSI2C batcher. */
++		bool powered = mode == 2 ? pm_touch_power_on() : apm_touch_power_on();
++		if (!powered) {
++			printf("HEROLTE TOUCH: no supply; stopping\n");
++			return;
++		}
+ 	}
+ 	/* sec_ts_power() 5 ms, then probe waits 60 ms for the IC to boot. */
+ 	ht_msleep(70);
