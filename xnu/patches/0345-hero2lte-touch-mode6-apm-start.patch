@@ -1,0 +1,18 @@
+diff --git a/bsd/dev/herolte_touch.c b/bsd/dev/herolte_touch.c
+--- a/bsd/dev/herolte_touch.c
++++ b/bsd/dev/herolte_touch.c
+@@ -803,6 +803,14 @@
+ 			ht_apm_probe();
+ 			printf("HEROLTE TOUCH: APM probe done (mode 5)\n");
+ 		}
++		if (mode == 6) {
++			/* Chiama apm_start() solo per gli effetti collaterali sul PMU
++			 * (scritture APM_CONFIG/APM_OPTION e checkpoint da 11 s):
++			 * sembrano necessari al display su hero2lte. Il risultato
++			 * viene ignorato: il PMIC verrà acceso via HSI2C standard. */
++			(void)apm_start();
++			printf("HEROLTE TOUCH: apm_start called (mode 6)\n");
++		}
+ 		printf("HEROLTE PMIC STD: ctl=%#x int=%#x conf=%#x trans=%#x batcher=%#x\n",
+ 		    ht_rd(ht_pm, HSI2C_CTL), ht_rd(ht_pm, HSI2C_INT_STAT),
+ 		    ht_rd(ht_pm, HSI2C_CONF), ht_rd(ht_pm, HSI2C_TRANS),
