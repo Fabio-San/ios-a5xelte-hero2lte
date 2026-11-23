@@ -1,0 +1,31 @@
+diff --git a/bsd/dev/herolte_gpu.c b/bsd/dev/herolte_gpu.c
+--- a/bsd/dev/herolte_gpu.c
++++ b/bsd/dev/herolte_gpu.c
+@@ -356,6 +356,9 @@
+ 
+ /* Shader cores a job may use (JS_AFFINITY). */
+ static uint32_t hg_affinity = 1;
++/* hero2lte: herogpu_cores=1 -> tutti i core Mali per i job client.
++ * I core vengono gia' accesi in probe (hg_power all shader cores). */
++static uint32_t hg_client_cores = 0;
+ /*
+  * Boot-arg herogpu_flush: the GPU cache's cleaning around clients' jobs, which are some 1600 a second in an animation.
+  * 0: before and after every job, as Linux's panfrost. 1 (default): only after, as a job begun finds it clean already.
+@@ -776,7 +779,8 @@
+ 	__asm__ volatile ("dsb sy" ::: "memory");
+ 	hg_wr(hg_gpu, slot + 0x40, (uint32_t)hg_job_va);        /* HEAD_NEXT */
+ 	hg_wr(hg_gpu, slot + 0x44, (uint32_t)(hg_job_va >> 32));
+-	hg_wr(hg_gpu, slot + 0x50, hg_affinity);                /* AFFINITY */
++	hg_wr(hg_gpu, slot + 0x50,
++	    hg_client_cores ? hg_rd(hg_gpu, SHADER_PRESENT_LO) : hg_affinity);  /* AFFINITY */
+ 	hg_wr(hg_gpu, slot + 0x54, 0);
+ 	uint32_t flush_start = (hg_run_quiet && hg_flush_mode >= 1) ? 0 : (3u << 8);
+ 	uint32_t flush_end = (hg_run_quiet && hg_flush_mode >= 2 && js == 1) ? 0 : (3u << 12);
+@@ -3879,6 +3883,7 @@
+ 	uint32_t twrp = 0;
+ 
+ 	PE_parse_boot_argn("herogpu_flush", &hg_flush_mode, sizeof(hg_flush_mode));
++	PE_parse_boot_argn("herogpu_cores", &hg_client_cores, sizeof(hg_client_cores));
+ 	PE_parse_boot_argn("herogpu_sleep_us", &hg_sleep_us, sizeof(hg_sleep_us));
+ 	PE_parse_boot_argn("herogpu_sleep_present", &hg_sleep_present, sizeof(hg_sleep_present));
+ 	int wifi = 1;                                          /* herowifi=0: no Wi-Fi */
