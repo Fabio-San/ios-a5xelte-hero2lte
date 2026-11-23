@@ -1,0 +1,83 @@
+diff --git a/bsd/dev/herolte_touch.c b/bsd/dev/herolte_touch.c
+--- a/bsd/dev/herolte_touch.c
++++ b/bsd/dev/herolte_touch.c
+@@ -79,6 +79,15 @@
+ 
+ static vm_offset_t ht_alive, ht_pins, ht_i2c, ht_pm;
+ static uint8_t ht_slave = HT_ADDR;
++/* Stato originale di HSI2C15 (0x10550000), preservato per altri driver
++ * (GPU/CPU DVFS su S2MPS16) che usano lo stesso bus dopo il nostro probe. */
++static uint32_t pm_saved_ctl, pm_saved_fifo_ctl, pm_saved_int_en;
++static uint32_t pm_saved_conf, pm_saved_auto_conf, pm_saved_timeout;
++static uint32_t pm_saved_fs1, pm_saved_fs2, pm_saved_fs3;
++static uint32_t pm_saved_sla, pm_saved_trailing, pm_saved_trans;
++static uint32_t pm_saved_batcher;
++static bool pm_saved;
++
+ static uint32_t pm_cmd_buffer;
+ static unsigned pm_cmd_index, pm_cmd_pointer, pm_desc;
+ static int ht_sleep;
+@@ -643,9 +652,55 @@
+ {
+ 	vm_offset_t saved = ht_i2c;
+ 	ht_i2c = ht_pm;
++	if (!pm_saved) {
++		pm_saved_batcher = ht_rd(ht_pm, 0x500);
++		pm_saved_ctl = ht_rd(ht_pm, HSI2C_CTL);
++		pm_saved_fifo_ctl = ht_rd(ht_pm, HSI2C_FIFO_CTL);
++		pm_saved_int_en = ht_rd(ht_pm, HSI2C_INT_EN);
++		pm_saved_conf = ht_rd(ht_pm, HSI2C_CONF);
++		pm_saved_auto_conf = ht_rd(ht_pm, HSI2C_AUTO_CONF);
++		pm_saved_timeout = ht_rd(ht_pm, HSI2C_TIMEOUT);
++		pm_saved_fs1 = ht_rd(ht_pm, HSI2C_FS1);
++		pm_saved_fs2 = ht_rd(ht_pm, HSI2C_FS2);
++		pm_saved_fs3 = ht_rd(ht_pm, HSI2C_FS3);
++		pm_saved_sla = ht_rd(ht_pm, HSI2C_SLA);
++		pm_saved_trailing = ht_rd(ht_pm, HSI2C_TRAILING);
++		pm_saved_trans = ht_rd(ht_pm, HSI2C_TRANS);
++		pm_saved = true;
++		printf("HEROLTE PMIC STD: saved ctl=%#x conf=%#x batcher=%#x\n",
++		    pm_saved_ctl, pm_saved_conf, pm_saved_batcher);
++	}
+ 	ht_wr(ht_pm, 0x500, 0);	/* HSI2C_BATCHER_CON: disable batcher */
+ 	ht_bus_init();
+ 	ht_i2c = saved;
++}
++
++/* Ripristina lo stato di 0x10550000 prima di restituire il bus agli altri
++ * driver (DVFS GPU/CPU): senza questo il boot si congela a flush #1. */
++static void
++pm_std_restore(void)
++{
++	if (!pm_saved) {
++		return;
++	}
++	ht_wr(ht_pm, HSI2C_INT_EN, 0);
++	ht_wr(ht_pm, HSI2C_CTL, 0x80000009u);
++	ht_wr(ht_pm, HSI2C_CTL, pm_saved_ctl);
++	ht_wr(ht_pm, HSI2C_FIFO_CTL, pm_saved_fifo_ctl);
++	ht_wr(ht_pm, HSI2C_TIMEOUT, pm_saved_timeout);
++	ht_wr(ht_pm, HSI2C_FS1, pm_saved_fs1);
++	ht_wr(ht_pm, HSI2C_FS2, pm_saved_fs2);
++	ht_wr(ht_pm, HSI2C_FS3, pm_saved_fs3);
++	ht_wr(ht_pm, HSI2C_SLA, pm_saved_sla);
++	ht_wr(ht_pm, HSI2C_TRAILING, pm_saved_trailing);
++	ht_wr(ht_pm, HSI2C_CONF, pm_saved_conf);
++	ht_wr(ht_pm, HSI2C_AUTO_CONF, pm_saved_auto_conf);
++	ht_wr(ht_pm, HSI2C_TRANS, pm_saved_trans);
++	ht_wr(ht_pm, 0x500, pm_saved_batcher);
++	ht_wr(ht_pm, HSI2C_INT_EN, pm_saved_int_en);
++	printf("HEROLTE PMIC STD: restored ctl=%#x conf=%#x batcher=%#x\n",
++	    ht_rd(ht_pm, HSI2C_CTL), ht_rd(ht_pm, HSI2C_CONF), ht_rd(ht_pm, 0x500));
++	pm_saved = false;
+ }
+ 
+ static bool
+@@ -840,6 +895,7 @@
+ 				printf("HEROLTE PMIC STD: LDO read failed\n");
+ 			}
+ 		}
++		pm_std_restore();
+ 		printf("HEROLTE TOUCH: skipping APM/batcher PMIC power-on (hero2lte)\n");
+ 		if (mode == 4) {
+ 			printf("HEROLTE TOUCH: power-only mode (herotouch=4), stopping before HID\n");
