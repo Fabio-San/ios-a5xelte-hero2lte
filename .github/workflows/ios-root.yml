@@ -120,3 +120,5 @@ jobs:
           gh release create "$tag" root.img.gz.part* d22ap.adt walls.tar.gz SHA256SUMS \
             --title "iOS ${{ inputs.ios_version || '16.7.16' }} root for herolte (${{ inputs.size_mb || '20480' }} MiB)" \
             --notes "Apple software for personal use on the owner's device. Do not make this repository or release public."
+
+# hero2lte private fork - registration
