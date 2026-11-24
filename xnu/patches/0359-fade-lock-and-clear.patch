@@ -1,0 +1,45 @@
+diff --git a/iokit/Kernel/arm/SweetFramebuffer.cpp b/iokit/Kernel/arm/SweetFramebuffer.cpp
+--- a/iokit/Kernel/arm/SweetFramebuffer.cpp
++++ b/iokit/Kernel/arm/SweetFramebuffer.cpp
+@@ -298,6 +298,7 @@
+ 		fSurface = sweet_surface_create_physical(fPhys, fWidth, fHeight, fRowBytes, SWEET_FB_FORMAT_BGRA);
+ 		fPixels = fSurface != NULL ? fSurface->kernelAddress() : 0;
+ 	}
++	bzero((void *)fPixels, (size_t)fHeight * fRowBytes);
+ 	fWorkLoop = IOWorkLoop::workLoop();
+ 	if (fLock == NULL || fClients == NULL || fPixels == 0 || fWorkLoop == NULL) {
+ 		IOLog("SWEET FB: setup failed\n");
+@@ -526,7 +527,12 @@
+ 		if (step <= 6) {
+ 			fb->fFadeStep = step + 1;
+ 		}
+-		IOLockUnlock(fb->fLock);
++		/* hero2lte: tieni fLock per tutto il fade: SwapEnd/present non devono
++		 * scrivere sullo stesso framebuffer mentre lo sfumiamo. */
++		if (step == 0) {
++			IOLog("A5XELTE FB: fade w=%u h=%u rowBytes=%u pixels=%p\n",
++			    fb->fWidth, fb->fHeight, fb->fRowBytes, (void *)fb->fPixels);
++		}
+ #if defined(ARM64_BOARD_CONFIG_HEROLTE)
+ 		if (step == 0) {
+ 			herolte_fb_primary();
+@@ -548,6 +554,7 @@
+ 			return;
+ 		}
+ #endif
++		IOLockUnlock(fb->fLock);
+ 		fb->rearmVsync(sender);
+ 		return;
+ 	}
+@@ -849,6 +856,11 @@
+ uint64_t
+ AppleCLCD::present(const uint8_t *rec)
+ {
++	/* hero2lte: durante il fade di spegnimento backboardd continua a mandare
++	 * frame: presentarli mentre sfumiamo produce la cascata di glitch. */
++	if (fPowerOff) {
++		return 0;
++	}
+ 	uint32_t mask = get32(rec, 0x104);
+ 	uint64_t copied = 0;
+ 
