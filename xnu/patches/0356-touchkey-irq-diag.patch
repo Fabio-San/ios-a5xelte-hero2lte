@@ -1,0 +1,20 @@
+diff --git a/bsd/dev/a5xelte_keys.c b/bsd/dev/a5xelte_keys.c
+--- a/bsd/dev/a5xelte_keys.c
++++ b/bsd/dev/a5xelte_keys.c
+@@ -83,10 +83,16 @@
+ 	uint16_t stable = a5_keys_sample();
+ 	uint16_t previous = stable;
+ 	unsigned repeated = 0;
++	uint16_t prev_irq = 0;
+ 	(void)arg;
+ 	(void)result;
+ 	for (;;) {
+ 		uint16_t sample = a5_keys_sample();
++		/* Diagnostica: gpa0-0 e' l'IRQ del touchkey ABOV (0x20). */
++		if ((sample ^ prev_irq) & 1u) {
++			prev_irq = sample & 1u;
++			printf("A5XELTE TOUCHKEY: gpa0-0 %s\n", prev_irq ? "high" : "low (pressed?)");
++		}
+ 		if (sample == previous) {
+ 			if (repeated < 2) {
+ 				repeated++;
