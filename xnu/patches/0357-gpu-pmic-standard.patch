@@ -1,0 +1,113 @@
+diff --git a/bsd/dev/herolte_gpu.c b/bsd/dev/herolte_gpu.c
+--- a/bsd/dev/herolte_gpu.c
++++ b/bsd/dev/herolte_gpu.c
+@@ -166,5 +166,7 @@
+  * touch supplies, to find vdd_g3d (BUCK6). Nothing is written.
+  */
+-extern bool herolte_apm_pmic_read(uint8_t reg, uint8_t *value);
++/* hero2lte: APM muto, usa l'I2C standard esportato da herolte_touch.c */
++extern bool herolte_std_pmic_read(uint8_t reg, uint8_t *value);
++extern bool herolte_std_pmic_write(uint8_t reg, uint8_t value);
+ 
+ static void
+@@ -174,5 +176,5 @@
+ 		uint8_t v[16];
+ 		for (unsigned i = 0; i < 16; i++) {
+-			if (!herolte_apm_pmic_read((uint8_t)(base + i), &v[i])) {
++			if (!herolte_std_pmic_read((uint8_t)(base + i), &v[i])) {
+ 				printf("HEROLTE GPU: PMIC read %#x failed (APM not started?)\n", base + i);
+ 				return;
+@@ -473,5 +475,5 @@
+ 	}
+ 	/* The voltage first, and read back: without it the clock stays as the bootloader left it. */
+-	if (!herolte_apm_pmic_read(0x26, &now)) {
++	if (!herolte_std_pmic_read(0x26, &now)) {
+ 		printf("HEROLTE GPU: clock: cannot read vdd_g3d, %u MHz not set\n", mhz);
+ 		return;
+@@ -479,7 +481,7 @@
+ 	if (now < volt) {
+ 		uint8_t set = 0;
+-		bool wrote = herolte_apm_g3d_voltage(volt);
++		bool wrote = herolte_std_pmic_write(0x26, volt);
+ 		delay(100);
+-		if (!wrote || !herolte_apm_pmic_read(0x26, &set) || set != volt) {
++		if (!wrote || !herolte_std_pmic_read(0x26, &set) || set != volt) {
+ 			printf("HEROLTE GPU: clock: vdd_g3d %#x -> %#x failed (now %#x), %u MHz not set\n", now, volt, set, mhz);
+ 			return;
+@@ -538,7 +540,7 @@
+ 	}
+ 	uint8_t g3d = 0, mif = 0, mngs = 0;
+-	herolte_apm_pmic_read(0x26, &g3d);
+-	herolte_apm_pmic_read(0x1b, &mif);
+-	herolte_apm_pmic_read(0x1d, &mngs);
++	herolte_std_pmic_read(0x26, &g3d);
++	herolte_std_pmic_read(0x1b, &mif);
++	herolte_std_pmic_read(0x1d, &mngs);
+ 	printf("HEROLTE GPU: supplies at the read fault: g3d %#x mif %#x mngs %#x\n", g3d, mif, mngs);
+ 	/* The way out of the GPU: its link clock in CMU_TOP, then the links in CMU_CCORE (read only here: a wrong CMU read aborts). */
+@@ -2461,11 +2463,11 @@
+ 	extern bool herolte_apm_mngs_voltage(uint8_t value);
+ 	uint8_t now = 0, set = 0;
+-	if (!herolte_apm_pmic_read(0x1d, &now)) {
++	if (!herolte_std_pmic_read(0x1d, &now)) {
+ 		return false;
+ 	}
+ 	if (now < hc.volt) {
+-		bool wrote = herolte_apm_mngs_voltage(hc.volt);
++		bool wrote = herolte_std_pmic_write(0x1d, hc.volt);
+ 		delay(200);
+-		if (!wrote || !herolte_apm_pmic_read(0x1d, &set) || set != hc.volt) {
++		if (!wrote || !herolte_std_pmic_read(0x1d, &set) || set != hc.volt) {
+ 			printf("HEROLTE CPU: vdd_mngs %#x -> %#x failed (now %#x), left alone\n", now, hc.volt, set);
+ 			return false;
+@@ -2514,7 +2516,7 @@
+ 	hg_wr(hc.sysreg, 0x1040, hc.boot_assist);
+ 	uint8_t set = 0;
+-	bool wrote = herolte_apm_mngs_voltage(hc.boot_volt);
++	bool wrote = herolte_std_pmic_write(0x1d, hc.boot_volt);
+ 	delay(200);
+-	if (!wrote || !herolte_apm_pmic_read(0x1d, &set) || set != hc.boot_volt) {
++	if (!wrote || !herolte_std_pmic_read(0x1d, &set) || set != hc.boot_volt) {
+ 		printf("HEROLTE CPU: vdd_mngs back to %#x failed (now %#x)\n", hc.boot_volt, set);
+ 	}
+@@ -2561,5 +2563,5 @@
+ 		printf("HEROLTE CPU: div %#x = %#x\n", hc_divs[i].off, hg_rd(mngs, hc_divs[i].off));
+ 	}
+-	if (!herolte_apm_pmic_read(0x1d, &now)) {
++	if (!herolte_std_pmic_read(0x1d, &now)) {
+ 		return;     /* the APM is not up yet: the next call */
+ 	}
+@@ -2801,5 +2803,5 @@
+ 		/* What the bootloader left on vdd_g3d: register 0x26 (PMIC_G3D_OUT in Samsung's APM driver). Nothing is written. */
+ 		uint8_t out = 0;
+-		bool read = herolte_apm_pmic_read(0x26, &out);
++		bool read = herolte_std_pmic_read(0x26, &out);
+ 		printf("HEROLTE GPU: PMIC G3D out reg 0x26 = %#x (%s)\n", out, read ? "read" : "read failed");
+ 		/*
+@@ -2810,6 +2812,6 @@
+ 		 */
+ 		uint8_t mngs = 0, apollo = 0;
+-		herolte_apm_pmic_read(0x1d, &mngs);
+-		herolte_apm_pmic_read(0x1f, &apollo);
++		herolte_std_pmic_read(0x1d, &mngs);
++		herolte_std_pmic_read(0x1f, &apollo);
+ 		printf("HEROLTE CPU: vdd_mngs reg %#x = %u uV, vdd_apollo reg %#x = %u uV\n", mngs, 300000 + mngs * 6250u,
+ 		    apollo, 300000 + apollo * 6250u);
+@@ -2850,5 +2852,4 @@
+  * 0 reads 0x6364 there.
+  */
+-extern bool herolte_apm_pmic_write(uint8_t reg, uint8_t value);
+ #define HA_SPI_PA       0x14d20000u
+ #define HA_CMU_PA       0x14c80000u
+@@ -3291,8 +3292,8 @@
+ 	    hg_rd(ha_pins, HA_GPE2 + 8), hg_rd(ha_pins, HA_GPE6), hg_rd(ha_pins, HA_GPE6 + 4));
+ 	uint8_t l30 = 0, l31 = 0;
+-	herolte_apm_pmic_read(0x5a, &l30);
+-	herolte_apm_pmic_read(0x5b, &l31);
++	herolte_std_pmic_read(0x5a, &l30);
++	herolte_std_pmic_read(0x5b, &l31);
+ 	printf("HEROLTE AUDIO: LDO30 %#x LDO31 %#x\n", l30, l31);
+-	herolte_apm_pmic_write(0x5b, (uint8_t)(l31 | 0xc0));
++	herolte_std_pmic_write(0x5b, (uint8_t)(l31 | 0xc0));
+ 	hg_msleep(5);
+ 	hg_wr(cmu, 0x800, hg_rd(cmu, 0x800) | (1u << 18));
