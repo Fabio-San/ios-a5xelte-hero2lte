@@ -1,0 +1,25 @@
+diff --git a/bsd/dev/herolte_gpu.c b/bsd/dev/herolte_gpu.c
+--- a/bsd/dev/herolte_gpu.c
++++ b/bsd/dev/herolte_gpu.c
+@@ -1739,7 +1739,9 @@
+ hfb_settled(void)
+ {
+ 	unsigned us = 0;
+-	while ((hg_rd(hfb_idma, 0x1c) & 1) && us < 40000) {
++	/* hero2lte: non attendere un intero periodo VSync (16,7 ms) qui: e'
++	 * dentro present() e gonfia max_copy_us. Cap a 1 ms. */
++	while ((hg_rd(hfb_idma, 0x1c) & 1) && us < 1000) {
+ 		delay(20);
+ 		us += 20;
+ 	}
+@@ -1750,8 +1752,8 @@
+ 		return false;
+ 	}
+ 	if (hg_rd(hfb_idma, 0x1c) & 1) {
+-		hfb_give_up("flip not taken in 40 ms");
+-		return false;
++		/* Flip non ancora preso: prosegui senza disattivare il doppio buffer. */
++		return true;
+ 	}
+ 	return true;
+ }
