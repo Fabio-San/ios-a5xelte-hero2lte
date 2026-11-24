@@ -1,0 +1,55 @@
+diff --git a/bsd/dev/herolte_touch.c b/bsd/dev/herolte_touch.c
+--- a/bsd/dev/herolte_touch.c
++++ b/bsd/dev/herolte_touch.c
+@@ -87,6 +87,9 @@
+ static uint32_t pm_saved_sla, pm_saved_trailing, pm_saved_trans;
+ static uint32_t pm_saved_batcher;
+ static bool pm_saved;
++/* HSI2C15 e' condiviso da touch, haptic, GPU DVFS e CPU DVFS: un solo master alla volta. */
++static LCK_GRP_DECLARE(pm_lck_grp, "herolte_pmic15");
++static LCK_MTX_DECLARE(pm_bus_mtx, &pm_lck_grp);
+ 
+ static uint32_t pm_cmd_buffer;
+ static unsigned pm_cmd_index, pm_cmd_pointer, pm_desc;
+@@ -756,17 +759,23 @@
+ bool
+ herolte_std_pmic_read(uint8_t reg, uint8_t *value)
+ {
++	bool ok;
++	lck_mtx_lock(&pm_bus_mtx);
+ 	pm_std_init();
+-	bool ok = pm_std_read(reg, value);
++	ok = pm_std_read(reg, value);
+ 	pm_std_restore();
++	lck_mtx_unlock(&pm_bus_mtx);
+ 	return ok;
+ }
+ bool
+ herolte_std_pmic_write(uint8_t reg, uint8_t value)
+ {
++	bool ok;
++	lck_mtx_lock(&pm_bus_mtx);
+ 	pm_std_init();
+-	bool ok = pm_std_write(reg, value);
++	ok = pm_std_write(reg, value);
+ 	pm_std_restore();
++	lck_mtx_unlock(&pm_bus_mtx);
+ 	return ok;
+ }
+ 
+@@ -892,6 +901,7 @@
+ 		 */
+ 		int pm_mode = 0;
+ 		PE_parse_boot_argn("heropmic", &pm_mode, sizeof(pm_mode));
++		lck_mtx_lock(&pm_bus_mtx);
+ 		if (mode == 5) {
+ 			ht_apm_probe();
+ 			printf("HEROLTE TOUCH: APM probe done (mode 5)\n");
+@@ -934,6 +944,7 @@
+ 			}
+ 		}
+ 		pm_std_restore();
++		lck_mtx_unlock(&pm_bus_mtx);
+ 		printf("HEROLTE TOUCH: skipping APM/batcher PMIC power-on (hero2lte)\n");
+ 		if (mode == 4) {
+ 			printf("HEROLTE TOUCH: power-only mode (herotouch=4), stopping before HID\n");
