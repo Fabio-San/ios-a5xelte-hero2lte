@@ -1,0 +1,31 @@
+diff --git a/bsd/sweet_hfs/core/hfs_vfsops.c b/bsd/sweet_hfs/core/hfs_vfsops.c
+--- a/bsd/sweet_hfs/core/hfs_vfsops.c
++++ b/bsd/sweet_hfs/core/hfs_vfsops.c
+@@ -2234,8 +2234,25 @@
+ 	sbp->f_bsize = (u_int32_t)vcb->blockSize;
+ 	sbp->f_iosize = (size_t)cluster_max_io_size(mp, 0);
+ 	sbp->f_blocks = (u_int64_t)((u_int32_t)vcb->totalBlocks);
+-	sbp->f_bfree = (u_int64_t)((u_int32_t )hfs_freeblks(hfsmp, 0));
+-	sbp->f_bavail = (u_int64_t)((u_int32_t )hfs_freeblks(hfsmp, 1));
++	{
++		uint32_t total = (uint32_t)vcb->totalBlocks;
++		uint32_t freeb = hfs_freeblks(hfsmp, 0);
++		uint32_t avail = hfs_freeblks(hfsmp, 1);
++		static int logged;
++		if (logged++ == 0) {
++			printf("HERO HFS: total=%u free=%u avail=%u blockSize=%u\n", total, freeb, avail, sbp->f_bsize);
++		}
++		/* hero2lte: l'header freeBlocks puo' arrivare corrotto (0x10401a32 -> 1.12 TB):
++		 * non esporre mai piu' spazio libero di quanto il volume contenga. */
++		if (total != 0 && freeb > total) {
++			freeb = total;
++		}
++		if (total != 0 && avail > total) {
++			avail = total;
++		}
++		sbp->f_bfree = (u_int64_t)freeb;
++		sbp->f_bavail = (u_int64_t)avail;
++	}
+ 	sbp->f_files = (u_int64_t)HFS_MAX_FILES;
+ 	sbp->f_ffree = (u_int64_t)hfs_free_cnids(hfsmp);
+ 

@@ -1,0 +1,33 @@
+diff --git a/iokit/Kernel/arm/SweetBattery.cpp b/iokit/Kernel/arm/SweetBattery.cpp
+--- a/iokit/Kernel/arm/SweetBattery.cpp
++++ b/iokit/Kernel/arm/SweetBattery.cpp
+@@ -15,6 +15,7 @@
+ #if defined(ARM64_BOARD_CONFIG_HEROLTE)
+ /* bsd/dev/herolte_battery.c: MAX77854 fuel gauge, read-only. */
+ extern "C" int herolte_fg_init(void);
++extern "C" int herolte_chg_poll(bool *external, bool *charging, bool *full);  /* hero2lte: MAX77854 charger */
+ extern "C" int herolte_fg_read(unsigned *percent, unsigned *mv, int *ma,
+     unsigned *rem_mah, unsigned *full_mah);
+ #define BATTERY_DESIGN_MAH 3000u        /* SM-G930F EB-BG930ABE */
+@@ -230,14 +231,18 @@
+ 		publish(100, 4200, 0, true, true, false, true, false, false);
+ 		return;
+ 	}
+-	/* No charger driver: the gauge's charge current marks a cable. */
+-	bool charging = ma > 20;
++	/* No charger driver: the gauge current marks a cable. hero2lte: the charger's own state. */
++	bool charging = ma > 20, external = charging, chgfull = false;
++	bool chgok = herolte_chg_poll(&external, &charging, &chgfull) == 0;
++	if (!chgok) {
++		external = charging = ma > 20;
++	}
+ 	static unsigned logged;
+ 	if (logged++ % 10 == 0) {
+ 		IOLog("SWEET BATTERY: %u%% %umV %dmA rem=%umAh full=%umAh\n",
+ 		    percent, mv, ma, rem, full);
+ 	}
+-	publish(percent, mv, ma, charging, charging, charging, false, true, true);
++	publish(chgfull ? 100 : percent, mv, ma, external, external, charging, chgfull, true, true);
+ }
+ #else
+ void

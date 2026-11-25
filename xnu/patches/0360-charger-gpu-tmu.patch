@@ -1,0 +1,19 @@
+diff --git a/bsd/dev/herolte_gpu.c b/bsd/dev/herolte_gpu.c
+--- a/bsd/dev/herolte_gpu.c
++++ b/bsd/dev/herolte_gpu.c
+@@ -2599,6 +2599,7 @@
+  */
+ volatile uint64_t herolte_screen_off_at;        /* mach time the display went off; 0 while it is on */
+ volatile int herolte_fg_temp_dc = -10000;       /* the battery, tenths of a degree; -10000 not read */
++volatile int herolte_soc_top_c = -1000;        /* hero2lte: hottest TMU, C; -1000 not read (herolte_battery.c) */
+ 
+ static const uint32_t hp_tmu_pa[] = { 0x10060000u, 0x10064000u, 0x10068000u, 0x1006c000u };   /* MNGS, APOLLO, GPU, ISP */
+ 
+@@ -2696,6 +2697,7 @@
+ 			}
+ 		}
+ 		seen_max = top > seen_max ? top : seen_max;
++		herolte_soc_top_c = top;
+ 		if (top > -1000) {
+ 			if (top >= (int)hot) {
+ 				hot_now = true;

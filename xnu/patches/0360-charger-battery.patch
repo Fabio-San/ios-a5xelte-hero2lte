@@ -1,0 +1,129 @@
+diff --git a/bsd/dev/herolte_battery.c b/bsd/dev/herolte_battery.c
+--- a/bsd/dev/herolte_battery.c
++++ b/bsd/dev/herolte_battery.c
+@@ -208,6 +208,125 @@
+ 	bool ok = fg_i2c != 0;
+ 	lck_mtx_unlock(&fg_bus_mtx);
+ 	return ok;
++}
++
++/*
++ * Note FE 0406: the MAX77854's charger (Linux drivers/battery_v2/max77854_charger.c), registers 0xb0-0xc6 of its charger
++ * slave 0x69 (drivers/mfd/max77854.c I2C_ADDR_CHG 0xD2 >> 1; 0x66 is the top/PMIC slave, which reads 0xff there) on this same bus. Android's driver sets WDTEN (CHG_CNFG_00 bit 4) and clears the watchdog (CHG_CNFG_06
++ * WDTCLR, bit 0) at every health poll; TWRP showed CNFG_00 0x15 while charging. Nothing cleared it under iOS, so about
++ * 80 s after the hand-over the charger stopped ("not charging while iOS runs"). Read: DETAILS_00 0xb3 (CHGIN_DTLS
++ * bits 6:5, 3 = input valid), DETAILS_01 0xb4 (CHG_DTLS bits 3:0: 0-3 charging, 4 done; BAT_DTLS 6:4), CNFG_00 0xb7.
++ * Written: only WDTCLR, as Android does, while the hottest SoC sensor is under 60 C (0413; was 50) (the battery's thermistor is read
++ * by Android through an ADC we don't drive): above it, or if this kernel stops, the watchdog ends charging by itself.
++ * Boot-arg herochgwdt=0: read only.
++ */
++#define CHG_ADDR        0x69u
++#define CHG_DETAILS_00  0xb3
++#define CHG_DETAILS_01  0xb4
++#define CHG_DETAILS_02  0xb5
++#define CHG_CNFG_00     0xb7
++#define CHG_CNFG_02     0xb9
++#define CHG_CNFG_06     0xbd
++#define CHG_CNFG_09     0xc0
++#define CHG_WDTEN       0x10u
++#define CHG_WDTCLR      0x01u
++#define CHG_KICK_MAX_C  60      /* 0413: 50 cut the watchdog under load (SoC sensors, not the battery) */
++
++static bool
++chg_byte(uint8_t reg, uint8_t *value)
++{
++	bool ok = false;
++	for (unsigned attempt = 0; attempt < 3 && !ok; attempt++) {
++		lck_mtx_lock(&fg_bus_mtx);
++		fg_addr = CHG_ADDR;
++		ok = fg_message(false, &reg, 1, false) && fg_message(true, value, 1, true);
++		fg_addr = FG_ADDR;
++		lck_mtx_unlock(&fg_bus_mtx);
++		if (!ok) {
++			delay(500);
++		}
++	}
++	return ok;
++}
++
++static bool
++chg_write(uint8_t reg, uint8_t value)
++{
++	uint8_t b[2] = { reg, value };
++	lck_mtx_lock(&fg_bus_mtx);
++	fg_addr = CHG_ADDR;
++	bool ok = fg_message(false, b, 2, true);
++	fg_addr = FG_ADDR;
++	lck_mtx_unlock(&fg_bus_mtx);
++	return ok;
++}
++
++int herolte_chg_poll(bool *external, bool *charging, bool *full);
++int
++herolte_chg_poll(bool *external, bool *charging, bool *full)
++{
++	static int kick = -1;
++	if (kick < 0) {
++		kick = 1;
++		PE_parse_boot_argn("herochgwdt", &kick, sizeof(kick));
++	}
++	uint8_t d0, d1, d2, c0, c2, c6, c9;
++	if (!fg_i2c || !chg_byte(CHG_DETAILS_00, &d0) || !chg_byte(CHG_DETAILS_01, &d1) ||
++	    !chg_byte(CHG_DETAILS_02, &d2) || !chg_byte(CHG_CNFG_00, &c0) || !chg_byte(CHG_CNFG_02, &c2) ||
++	    !chg_byte(CHG_CNFG_06, &c6) || !chg_byte(CHG_CNFG_09, &c9)) {
++		return -1;
++	}
++	if (d0 == 0xff && d1 == 0xff && c0 == 0xff && c6 == 0xff) {
++		static unsigned bad;
++		if (bad++ < 3) {
++			printf("NOTEFE CHG: charger registers all read 0xff: not the charger, nothing written\n");
++		}
++		return -1;              /* the caller falls back to the gauge's current */
++	}
++	extern volatile int herolte_soc_top_c;          /* herolte_gpu.c (0406) */
++	int soc = herolte_soc_top_c;
++	bool kicked = false;
++	static unsigned polls;
++	/* The TMUs are first read about a minute in: until then (the first five polls, 2.5 min) clear it anyway. */
++	bool cool = soc > -1000 ? soc < CHG_KICK_MAX_C : polls++ < 5;
++	if (kick && (c0 & CHG_WDTEN) && cool) {
++		kicked = chg_write(CHG_CNFG_06, (uint8_t)(c6 | CHG_WDTCLR));
++	}
++	/*
++	 * Note FE 0411: S-Boot leaves the input current limit at 500 mA (CNFG_09 0x0f, 33.3 mA steps), less than the phone
++	 * uses with the screen on: "charging" while the gauge reads -55 mA (boot 6). Android's driver set 0x2d (1500 mA) on
++	 * the same cable and port in TWRP. With a valid input and the SoC cool, the limit goes to herochgma (default 1500,
++	 * at most 2000; 0 leaves S-Boot's).
++	 */
++	static int ilim_ma = -1;
++	if (ilim_ma < 0) {
++		ilim_ma = 1500;
++		PE_parse_boot_argn("herochgma", &ilim_ma, sizeof(ilim_ma));
++		ilim_ma = ilim_ma > 2000 ? 2000 : ilim_ma;
++	}
++	uint8_t want9 = (uint8_t)(ilim_ma / 33);
++	if (ilim_ma > 0 && ((d0 >> 5) & 3u) == 3u && cool && (c9 & 0x7fu) < want9 && (c6 & 0x0cu) == 0x0cu) {
++		uint8_t n9 = (uint8_t)((c9 & 0x80u) | want9);
++		if (chg_write(CHG_CNFG_09, n9) && chg_byte(CHG_CNFG_09, &c9)) {
++			printf("NOTEFE CHG: input limit %u mA -> %#x (read back %#x)\n", (unsigned)ilim_ma, n9, c9);
++		}
++	}
++	unsigned dtls = d1 & 0x0fu;
++	*external = ((d0 >> 5) & 3u) == 3u;
++	*charging = *external && dtls <= 3u;
++	*full = *external && dtls == 4u;
++	static unsigned logged;
++	static uint8_t last_d1 = 0xff, last_c0 = 0xff, last_d0 = 0xff;
++	if (logged++ % 10 == 0 || d1 != last_d1 || c0 != last_c0 || d0 != last_d0) {
++		printf("NOTEFE CHG: in=%u dtls=%#x bat=%u byp=%#x cnfg00=%#x cnfg02=%#x cnfg06=%#x cnfg09=%#x | %s%s (SoC %d C)\n",
++		    (d0 >> 5) & 3u, dtls, (d1 >> 4) & 7u, d2 & 0x0fu, c0, c2, c6, c9,
++		    !(c0 & CHG_WDTEN) ? "watchdog off" : kicked ? "watchdog cleared" : kick ? "watchdog NOT cleared" : "read only",
++		    *charging ? ", charging" : *full ? ", full" : *external ? ", cable, not charging" : ", no cable", soc);
++	}
++	last_d1 = d1;
++	last_c0 = c0;
++	last_d0 = d0;
++	return 0;
+ }
+ 
+ int
