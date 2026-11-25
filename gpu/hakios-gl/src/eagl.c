@@ -1779,17 +1779,6 @@ trace_placed_draw(struct eagl *e, GLenum mode, GLenum type, const void *indices,
 			}
 		}
 	}
-	if (sb_track && e->colour != 0) {
-		static uint8_t sb_seen[90][8];
-		int fn = ca_context != NULL ? *(*(uint8_t **)((char *)ca_context + 0x10) + 0x10) : 90;
-		/* fascia superiore (o inferiore, l'origine Y puo' essere bottom-up) */
-		if (fn < 90 && low[1] < 130 && sb_seen[fn][0] < 8) {
-			unsigned slot = sb_seen[fn][0]++;
-			say("SB_DRAW: fn=%u slot=%u fbo=%u(%ux%u) rect=%g,%g->%g,%g tex0=%u prog=%u frame=%u\n",
-			    fn, slot, e->framebuffer, 0, 0, (double)low[0], (double)low[1], (double)high[0], (double)high[1],
-			    e->bound[0], e->program, e->frames + 1);
-		}
-	}
 	if (low[0] > trace_place[2] || high[0] < trace_place[0] || low[1] > trace_place[3] || high[1] < trace_place[1]) {
 		return;
 	}
@@ -4561,11 +4550,9 @@ install(void)
 		red_test = strstr(arguments, "glred=1") != NULL;
 		sb_track = strstr(arguments, "glsbtrack=1") != NULL;
 		if (sb_track) {
-			trace_placed = 1;
-			/* eagl_tracing deve essere true perche' il ramo
-			 * `else if (eagl_tracing && trace_placing)` attivi. */
-			trace_first = 1;
-			trace_last = 0x7fffffff;
+			/* 0377: solo il log SB_DRAW, SENZA trace globale: il
+			 * glReadPixels di trace_placed_look() su ogni frame
+			 * sincronizzava la GPU e bloccava backboardd. */
 			trace_place[0] = 0.f;
 			trace_place[1] = 0.f;
 			trace_place[2] = 2000.f;
