@@ -1,0 +1,14 @@
+diff --git a/iokit/Kernel/arm/SweetFramebuffer.cpp b/iokit/Kernel/arm/SweetFramebuffer.cpp
+--- a/iokit/Kernel/arm/SweetFramebuffer.cpp
++++ b/iokit/Kernel/arm/SweetFramebuffer.cpp
+@@ -535,6 +535,10 @@
+ 		}
+ #if defined(ARM64_BOARD_CONFIG_HEROLTE)
+ 		if (step == 0) {
++			/* 0372: il pannello passa da VGR0 (750x1334, stride 3072) a
++			 * G1 (1440x2560, stride 5760): azzera prima, altrimenti il
++			 * fade legge 1/4 dell'immagine con lo stride sbagliato. */
++			bzero((void *)fb->fPixels, (size_t)fb->fHeight * fb->fRowBytes);
+ 			herolte_fb_primary();
+ 		}
+ #endif

@@ -1,0 +1,12 @@
+diff --git a/bsd/dev/herolte_gl.c b/bsd/dev/herolte_gl.c
+--- a/bsd/dev/herolte_gl.c
++++ b/bsd/dev/herolte_gl.c
+@@ -75,7 +75,7 @@
+  * and bluetoothd (no Bluetooth driver) was relaunched every few seconds:
+  * together with launchd's respawns, ~3 of the 8 cores the UI needs.
+  */
+-static char hgl_noexec[128];
++static char hgl_noexec[512];   /* 0372: cmdline heronoexec e' 158 byte */
+ static int hgl_noexec_init;
+ 
+ static bool

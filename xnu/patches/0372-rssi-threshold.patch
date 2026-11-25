@@ -1,0 +1,15 @@
+diff --git a/bsd/dev/sweet_apple80211.c b/bsd/dev/sweet_apple80211.c
+--- a/bsd/dev/sweet_apple80211.c
++++ b/bsd/dev/sweet_apple80211.c
+@@ -104,9 +104,9 @@
+  * (patches/xnu/README-wifi.md "0345", from the 20H392 binaries; the values are its guess, min < threshold
+  * < max). Refused, wifid had no range to put a signal in (boot 57: the status bar weak at -41 dBm).
+  */
+-#define RSSI_BOUND_MIN          (-90)
++#define RSSI_BOUND_MIN          (-95)   /* 0372: prima -90 */
+ #define RSSI_BOUND_MAX          (-40)
+-#define RSSI_BOUND_THRESHOLD    (-80)
++#define RSSI_BOUND_THRESHOLD    (-88)   /* 0372: prima -80, sotto -86 dBm */
+ #define PHY_11A                 0x2u
+ #define PHY_11B                 0x4u
+ #define PHY_11G                 0x8u
