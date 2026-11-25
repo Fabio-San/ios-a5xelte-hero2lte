@@ -164,7 +164,6 @@ static int
 my_function_supported(void *context)
 {
    log_function_map(context);
-{
 	static uint8_t said[256];
 	int supported = orig_function_supported(context);
 	uint8_t function = *(*(uint8_t **)((char *)context + 0x10) + 0x10);
