@@ -1,0 +1,26 @@
+diff --git a/iokit/Kernel/arm/SweetFramebuffer.cpp b/iokit/Kernel/arm/SweetFramebuffer.cpp
+--- a/iokit/Kernel/arm/SweetFramebuffer.cpp
++++ b/iokit/Kernel/arm/SweetFramebuffer.cpp
+@@ -980,6 +980,22 @@
+ 			}
+ #endif
+ 		}
++#if defined(ARM64_BOARD_CONFIG_HEROLTE)
++		/* 0368: la stessa schizzo della superficie SORGENTE: se i rettangoli
++		 * ci sono qui ma non nel pannello, il guasto e' nel presentation path. */
++		static int src80_done;
++		if (!src80_done && fSwaps > 120 && w == (int32_t)fLogicalW && h == (int32_t)fLogicalH &&
++		    s->kernelAddress() != 0 && s->bytesPerRow > 0) {
++			src80_done = 1;
++			for (uint32_t y = 0; y < 80 && y < (uint32_t)s->height; y += 8) {
++				volatile uint32_t *row = (volatile uint32_t *)(s->kernelAddress() + (uintptr_t)s->offset +
++				    (uint64_t)y * s->bytesPerRow);
++				IOLog("HERO TOP80 SRC: layer=%u y=%u %08x %08x %08x %08x %08x %08x %08x %08x\n", layer, y,
++				    row[40], row[150], row[250], row[350],
++				    row[450], row[550], row[650], row[700]);
++			}
++		}
++#endif
+ 		s->release();
+ 	}
+ #if defined(ARM64_BOARD_CONFIG_HEROLTE)

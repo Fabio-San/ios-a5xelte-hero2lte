@@ -9,12 +9,54 @@
  * is given, as on a device that cannot make one.
  */
 #include <dlfcn.h>
+#include <execinfo.h>
+#include <fcntl.h>
 #include <objc/message.h>
 #include <objc/runtime.h>
 #include <stdarg.h>
 #include <stdbool.h>
+#include <stdio.h>
 #include <string.h>
 #include <unistd.h>
+
+/*
+ * (0368) Un'eccezione C++ lanciata da una funzione noexcept finisce in
+ * std::unexpected -> abort: e' il crash di assetsd e MailWidgetExtens. Intercetta
+ * __cxa_throw e scrive lo stack *al momento del lancio* su un file della drop
+ * zone, leggibile da TWRP con herolte-hfs-read.py. Non decodifichiamo la
+ * struttura del tipo (un read sbagliato farebbe da crash): gli indirizzi grezzi
+ * si simbolizzano offline con il DSC completo.
+ */
+extern void __cxa_throw(void *ex, void *type, void (*dest)(void *));
+static void (*real_throw)(void *, void *, void (*)(void *));
+
+void
+__cxa_throw(void *ex, void *type, void (*dest)(void *))
+{
+   if (real_throw == NULL) {
+      real_throw = (void (*)(void *, void *, void (*)(void *)))dlsym(RTLD_NEXT, "__cxa_throw");
+   }
+   void *bt[14];
+   int n = backtrace(bt, 14);
+   int fd = open("/private/var/herolte/cxa.log", O_WRONLY | O_CREAT | O_APPEND, 0644);
+   if (fd >= 0) {
+      char line[1024];
+      int len = snprintf(line, sizeof(line), "%s: __cxa_throw type=%p", getprogname(), type);
+      for (int i = 0; i < n && len < (int)sizeof(line) - 20; i++) {
+         len += snprintf(line + len, sizeof(line) - len, " %p", bt[i]);
+      }
+      line[sizeof(line) - 1] = 0;
+      (void)!write(fd, line, strlen(line));
+      (void)!write(fd, "\n", 1);
+      close(fd);
+   }
+   herodrm_log("%s: __cxa_throw %d frame", getprogname(), n);
+   if (real_throw != NULL) {
+      real_throw(ex, type, dest);
+   } else {
+      _exit(42);
+   }
+}
 
 extern void herodrm_log(const char *format, ...);
 extern void NSSetUncaughtExceptionHandler(void (*handler)(id));
