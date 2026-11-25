@@ -263,6 +263,7 @@ struct eagl {
 	bool no_vibrant;                /* the first of the two could not be made */
 	GLint vibrant_matrix, vibrant_colours, masking_matrix, masking_colours;
 	GLuint vibrant_copy, backdrop;  /* (Galaxy S7 port) "vcm" from a copy of what is behind: see vibrant_copy_fragment */
+	GLint masking_red_test;   /* 0375: boot-arg glred=1 */
 	GLuint colour_only, colour_only_colours, colour_only_matrix, colour_only_origin;   /* 0374 */
 	GLint vibrant_copy_matrix, vibrant_copy_colours, vibrant_copy_origin;
 	bool backdrop_bound;            /* the copy is on unit BACKDROP_UNIT until plain_draw_end() */
@@ -343,6 +344,7 @@ static struct group_texture *group_of(struct eagl *e, GLuint texture);
 static __thread struct eagl *current;
 static struct eagl *contexts[8];
 static uint32_t slot_calls[SLOTS];
+static int red_test;   /* 0375: glred=1 colors c4p draws red */
 static int check_errors = 1;            /* ask the library for an error after every call (the first frames) */
 static int share_surfaces = 1;          /* boot-arg glcopy=1: 0 */
 /*
@@ -2016,10 +2018,12 @@ static const char masking_fragment[] =
     "#version 300 es\n"
     "uniform lowp sampler2D texture0;\n"
     "uniform mediump vec4 colours[5];\n"
+    "uniform lowp float red_test;\n"
     "in lowp vec4 color;\n"
     "in highp vec2 texcoord;\n"
     "out lowp vec4 result;\n"
     "void main() {\n"
+    "  if (red_test > 0.5) { result = vec4(0.35, 0.0, 0.0, 0.35); return; }\n"
     "  mediump vec4 s = color * texture(texture0, texcoord / vec2(textureSize(texture0, 0)));\n"
     "  result = clamp(s.r * colours[0] + s.g * colours[1] + s.b * colours[2] + s.a * colours[3] + colours[4], 0., 1.);\n"
     "}\n";
@@ -3285,6 +3289,7 @@ plain_draw_begin(struct eagl *e, GLint enabled[4])
 			e->masking = plain_program(masking_fragment, "a colour matrix over premultiplied pixels");
 			e->masking_matrix = glGetUniformLocation(e->masking, "vertex_matrix");
 			e->masking_colours = glGetUniformLocation(e->masking, "colours");
+			e->masking_red_test = glGetUniformLocation(e->masking, "red_test");
 		}
 		if (vibrant && e->no_vibrant) {
 			census_draw(e, function, CENSUS_NOT_DRAWN);     /* better nothing than the mask as a picture */
@@ -3295,6 +3300,9 @@ plain_draw_begin(struct eagl *e, GLint enabled[4])
 		glUseProgram(program);
 		glUniformMatrix4fv(vibrant ? e->vibrant_matrix : e->masking_matrix, 1, 0, e->matrix != NULL ? e->matrix : identity);
 		glUniform4fv(vibrant ? e->vibrant_colours : e->masking_colours, 5, function_values[function]);
+		if (!vibrant && e->masking_red_test >= 0) {
+			glUniform1f(e->masking_red_test, red_test ? 1.f : 0.f);
+		}
 		if (vibrant && glIsEnabled(GL_BLEND)) {
 			e->blended = 1;                 /* the program has blended already */
 			glDisable(GL_BLEND);
@@ -4538,6 +4546,7 @@ install(void)
 			}
 			fclose(more);
 		}
+		red_test = strstr(arguments, "glred=1") != NULL;
 		if ((argument = strstr(arguments, "gltrace=")) != NULL) {
 			trace_last = trace_first = (unsigned)strtoul(argument + 8, (char **)&argument, 10);
 			if (*argument == '-') {
