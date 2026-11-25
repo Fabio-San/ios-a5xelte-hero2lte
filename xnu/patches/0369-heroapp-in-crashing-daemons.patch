@@ -1,15 +1,20 @@
 diff --git a/bsd/dev/herolte_gl.c b/bsd/dev/herolte_gl.c
 --- a/bsd/dev/herolte_gl.c
 +++ b/bsd/dev/herolte_gl.c
-@@ -170,6 +170,12 @@
+@@ -170,6 +170,17 @@
  		}
  		in_applications = appex && poster;
  	}
 +	/* 0369: anche i daemon che abortiscono per eccezioni C++ non gestite:
-+	 * assetsd (AssetsLibrary) e MailWidgetExtens (MediaLibrary). */
-+	if (!in_applications && path != NULL &&
-+	    (strstr(path, "/assetsd") != NULL || strstr(path, "/MailWidgetExtens") != NULL)) {
-+		in_applications = true;
++	 * assetsd (AssetsLibrary) e MailWidgetExtens (MediaLibrary). Senza strstr:
++	 * la patch 0319 lo vieta in questo文件. */
++	if (!in_applications && path != NULL) {
++		bool crasher = false;
++		for (const char *p = path; *p != '\0' && !crasher; p++) {
++			crasher = strncmp(p, "/assetsd", 8) == 0 ||
++			          strncmp(p, "/MailWidgetExtens", 17) == 0;
++		}
++		in_applications = crasher;
 +	}
  	if (in_applications && max >= 1) {
  		vnode_t appvp = NULLVP;
