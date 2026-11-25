@@ -1,0 +1,11 @@
+diff --git a/iokit/Kernel/arm/SweetFramebuffer.cpp b/iokit/Kernel/arm/SweetFramebuffer.cpp
+--- a/iokit/Kernel/arm/SweetFramebuffer.cpp
++++ b/iokit/Kernel/arm/SweetFramebuffer.cpp
+@@ -551,6 +551,7 @@
+ 			/* (0330) black and off: 5 ticks a second instead of 60, so that whatever waits for them sleeps */
+ 			fb->fVsyncNext = 0;
+ 			sender->setTimeoutMS(200);
++			IOLockUnlock(fb->fLock);   /* 0362: bilancia il lock di vsyncFired */
+ 			return;
+ 		}
+ #endif
