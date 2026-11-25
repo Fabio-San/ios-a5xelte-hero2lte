@@ -1,0 +1,24 @@
+diff --git a/iokit/Kernel/arm/SweetFramebuffer.cpp b/iokit/Kernel/arm/SweetFramebuffer.cpp
+--- a/iokit/Kernel/arm/SweetFramebuffer.cpp
++++ b/iokit/Kernel/arm/SweetFramebuffer.cpp
+@@ -982,6 +982,20 @@
+ 		}
+ 		s->release();
+ 	}
++#if defined(ARM64_BOARD_CONFIG_HEROLTE)
++	/* 0364: uno schizzo delle prime righe del pannello, per capire se i
++	 * rettangoli della status bar sono nella sorgente o nella presentazione. */
++	static int top80_done;
++	if (!top80_done && fSwaps > 120) {
++		top80_done = 1;
++		for (uint32_t y = 0; y < 80; y += 8) {
++			volatile uint32_t *row = (volatile uint32_t *)(fPixels + (uint64_t)y * fRowBytes);
++			IOLog("HERO TOP80: y=%u %08x %08x %08x %08x %08x %08x %08x %08x\n", y,
++			    row[100], row[300], row[500], row[700],
++			    row[900], row[1100], row[1300], row[1439]);
++		}
++	}
++#endif
+ 	return copied;
+ }
+ 

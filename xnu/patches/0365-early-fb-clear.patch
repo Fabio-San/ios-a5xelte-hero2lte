@@ -1,0 +1,27 @@
+diff --git a/osfmk/arm64/sweet_early.c b/osfmk/arm64/sweet_early.c
+--- a/osfmk/arm64/sweet_early.c
++++ b/osfmk/arm64/sweet_early.c
+@@ -20,6 +20,7 @@
+ #define A5_COLS (A5XELTE_FB_WIDTH / A5_COL_WIDTH)
+ extern unsigned char iso_font[256 * 16];
+ static unsigned int a5_row = 4, a5_col, a5_active = 1, a5_panicking;
++static unsigned int a5_cleared;
+ 
+ static void
+ a5_clear_row(void)
+@@ -37,6 +38,15 @@
+ {
+ 	if (!a5_active) {
+ 		return;
++	}
++	if (!a5_cleared) {
++		a5_cleared = 1;
++		for (unsigned int y = 0; y < A5XELTE_FB_HEIGHT; y++) {
++			volatile uint32_t *line = A5_FB + (uint32_t)y * A5_STRIDE;
++			for (unsigned int x = 0; x < A5_STRIDE; x++) {
++				line[x] = 0xff000000u;
++			}
++		}
+ 	}
+ 	if (c == '\r') {
+ 		a5_col = 0;

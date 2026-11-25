@@ -1,0 +1,24 @@
+diff --git a/bsd/sweet_hfs/core/hfs_vfsops.c b/bsd/sweet_hfs/core/hfs_vfsops.c
+--- a/bsd/sweet_hfs/core/hfs_vfsops.c
++++ b/bsd/sweet_hfs/core/hfs_vfsops.c
+@@ -4086,10 +4086,18 @@
+ 	VFSATTR_RETURN(fsap, f_iosize, (size_t)cluster_max_io_size(mp, 0));
+ 	VFSATTR_RETURN(fsap, f_blocks, (u_int64_t)hfsmp->totalBlocks);
+ 	if (VFSATTR_WANTED(fsap, f_bfree) || !diskimage) {
+-		VFSATTR_RETURN(fsap, f_bfree, (u_int64_t)hfs_freeblks(hfsmp, 0));
++		uint64_t freeb = hfs_freeblks(hfsmp, 0), total = (uint64_t)hfsmp->totalBlocks;
++		if (total != 0 && freeb > total) {
++			freeb = total;
++		}
++		VFSATTR_RETURN(fsap, f_bfree, freeb);
+ 	}
+ 	if (VFSATTR_WANTED(fsap, f_bavail) || !diskimage) {
+-		VFSATTR_RETURN(fsap, f_bavail, (u_int64_t)hfs_freeblks(hfsmp, 1));
++		uint64_t avail = hfs_freeblks(hfsmp, 1), total = (uint64_t)hfsmp->totalBlocks;
++		if (total != 0 && avail > total) {
++			avail = total;
++		}
++		VFSATTR_RETURN(fsap, f_bavail, avail);
+ 	}
+ 	VFSATTR_RETURN(fsap, f_bsize, (u_int32_t)vcb->blockSize);
+ 	/* XXX needs clarification */
