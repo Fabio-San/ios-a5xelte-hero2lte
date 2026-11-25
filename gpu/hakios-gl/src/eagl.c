@@ -263,6 +263,7 @@ struct eagl {
 	bool no_vibrant;                /* the first of the two could not be made */
 	GLint vibrant_matrix, vibrant_colours, masking_matrix, masking_colours;
 	GLuint vibrant_copy, backdrop;  /* (Galaxy S7 port) "vcm" from a copy of what is behind: see vibrant_copy_fragment */
+	GLuint colour_only, colour_only_colours, colour_only_matrix;   /* 0373: c4p/vcm senza texture */
 	GLint vibrant_copy_matrix, vibrant_copy_colours, vibrant_copy_origin;
 	bool backdrop_bound;            /* the copy is on unit BACKDROP_UNIT until plain_draw_end() */
 	GLbitfield unclear;             /* a glClear put off until the next draw (clear_now()), and what it was to be made with */
@@ -1989,6 +1990,22 @@ static const char vibrant_copy_fragment[] =
     "  s.rgb = clamp(s.rgb * s.a, 0., 1.);\n"
     "  result = mix(behind, s, layer.a);\n"
     "}\n";
+/*
+ * (0373) c4p / vcm draws without a texture: CoreAnimation gives a 4x4+bias
+ * colour matrix and no sampler.  masking_fragment needs a texture; applying
+ * the same arithmetic to the vertex colour is what those draws need, and
+ * unlike glplain=2 it does not paint the screen white.
+ */
+static const char colour_only_fragment[] =
+    "#version 300 es\n"
+    "uniform mediump vec4 colours[5];\n"
+    "in lowp vec4 color;\n"
+    "out lowp vec4 result;\n"
+    "void main() {\n"
+    "  result = clamp(color.r * colours[0] + color.g * colours[1] +\n"
+    "                 color.b * colours[2] + color.a * colours[3] + colours[4], 0., 1.);\n"
+    "}\n";
+
 static const char masking_fragment[] =
     "#version 300 es\n"
     "uniform lowp sampler2D texture0;\n"
@@ -3140,6 +3157,21 @@ plain_draw_begin(struct eagl *e, GLint enabled[4])
 	 */
 	if (!plain_draws || (plain_draws == 1 && e->bound[0] == 0) || reads_what_it_writes(e) ||
 	    (e->colour != 0 && e->colour == e->bound[0])) {
+		/* (0373) c4p / vcm with no texture: apply the colour matrix to the
+		 * vertex colour instead of dropping the draw. */
+		if (e->bound[0] == 0 && function < 90 && function_given[function] == 20 &&
+		    (function == FUNCTION_MATRIX_PREMULTIPLIED || function == FUNCTION_VIBRANT_MATRIX)) {
+			if (e->colour_only == 0) {
+				e->colour_only = plain_program(colour_only_fragment, "a colour matrix over a vertex colour (no texture)");
+				e->colour_only_colours = glGetUniformLocation(e->colour_only, "colours");
+				e->colour_only_matrix = glGetUniformLocation(e->colour_only, "vertex_matrix");
+			}
+			glUseProgram(e->colour_only);
+			glUniformMatrix4fv(e->colour_only_matrix, 1, 0, e->matrix != NULL ? e->matrix : identity);
+			glUniform4fv(e->colour_only_colours, 5, function_values[function]);
+			census_draw(e, function, function == FUNCTION_VIBRANT_MATRIX ? CENSUS_VIBRANT : CENSUS_MASKING);
+			return true;
+		}
 		census_draw(e, function, CENSUS_NOT_DRAWN);
 		return false;
 	}
