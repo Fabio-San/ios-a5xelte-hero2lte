@@ -4561,7 +4561,11 @@ install(void)
 		red_test = strstr(arguments, "glred=1") != NULL;
 		sb_track = strstr(arguments, "glsbtrack=1") != NULL;
 		if (sb_track) {
-			trace_placed = 1;   /* serve per trace_placed_draw(), senza eagl_tracing */
+			trace_placed = 1;
+			/* eagl_tracing deve essere true perche' il ramo
+			 * `else if (eagl_tracing && trace_placing)` attivi. */
+			trace_first = 1;
+			trace_last = 0x7fffffff;
 			trace_place[0] = 0.f;
 			trace_place[1] = 0.f;
 			trace_place[2] = 2000.f;
