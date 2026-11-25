@@ -1,0 +1,79 @@
+diff --git a/iokit/Kernel/arm/SweetFramebuffer.cpp b/iokit/Kernel/arm/SweetFramebuffer.cpp
+--- a/iokit/Kernel/arm/SweetFramebuffer.cpp
++++ b/iokit/Kernel/arm/SweetFramebuffer.cpp
+@@ -950,37 +950,6 @@
+ 			src = 0;
+ 		}
+ #if defined(ARM64_BOARD_CONFIG_HEROLTE)
+-		if (src != 0 && bpe == 4 && fGpu && dx == 0 && dy == 0 &&
+-		    w == (int32_t)fLogicalW && h == (int32_t)fLogicalH && gpuPresent(s, sx, sy, w, h)) {
+-			copied += (uint64_t)fWidth * fHeight * 4;
+-			s->release();
+-			continue;
+-		}
+-		if (src != 0 && bpe == 4) {
+-			herolte_fb_primary();   /* the CPU writes the first buffer: shown first (herofb2) */
+-		}
+-#endif
+-		if (src != 0 && bpe == 4 && fScaled) {
+-			copied += scaledCopy(src + s->offset + (uint64_t)sy * s->bytesPerRow + (uint64_t)sx * 4,
+-			    s->bytesPerRow, dx, dy, w, h);
+-		} else if (src != 0 && bpe == 4) {
+-			copied += (uint64_t)w * (uint64_t)h * 4;
+-#if defined(ARM64_BOARD_CONFIG_HEROLTE)
+-			sweet_fb_copy_rows(fPixels + (uint64_t)dy * fRowBytes + (uint64_t)dx * 4, fRowBytes,
+-			    src + s->offset + (uint64_t)sy * s->bytesPerRow + (uint64_t)sx * 4, s->bytesPerRow,
+-			    (size_t)w * 4, h);
+-			if (w == (int32_t)fWidth && h == (int32_t)fHeight) {
+-				__atomic_store_n(&sweet_fb_last_surface_id, s->id, __ATOMIC_RELEASE);
+-			}
+-#else
+-			for (int32_t y = 0; y < h; y++) {
+-				memcpy((void *)(fPixels + (uint64_t)(dy + y) * fRowBytes + (uint64_t)dx * 4),
+-				    (const void *)(src + s->offset + (uint64_t)(sy + y) * s->bytesPerRow + (uint64_t)sx * 4),
+-				    (size_t)w * 4);
+-			}
+-#endif
+-		}
+-#if defined(ARM64_BOARD_CONFIG_HEROLTE)
+ 		/* 0368: la stessa schizzo della superficie SORGENTE: se i rettangoli
+ 		 * ci sono qui ma non nel pannello, il guasto e' nel presentation path. */
+ 		static int src80_done;
+@@ -997,6 +966,37 @@
+ 			}
+ 		}
+ #endif
++#if defined(ARM64_BOARD_CONFIG_HEROLTE)
++		if (src != 0 && bpe == 4 && fGpu && dx == 0 && dy == 0 &&
++		    w == (int32_t)fLogicalW && h == (int32_t)fLogicalH && gpuPresent(s, sx, sy, w, h)) {
++			copied += (uint64_t)fWidth * fHeight * 4;
++			s->release();
++			continue;
++		}
++		if (src != 0 && bpe == 4) {
++			herolte_fb_primary();   /* the CPU writes the first buffer: shown first (herofb2) */
++		}
++#endif
++		if (src != 0 && bpe == 4 && fScaled) {
++			copied += scaledCopy(src + s->offset + (uint64_t)sy * s->bytesPerRow + (uint64_t)sx * 4,
++			    s->bytesPerRow, dx, dy, w, h);
++		} else if (src != 0 && bpe == 4) {
++			copied += (uint64_t)w * (uint64_t)h * 4;
++#if defined(ARM64_BOARD_CONFIG_HEROLTE)
++			sweet_fb_copy_rows(fPixels + (uint64_t)dy * fRowBytes + (uint64_t)dx * 4, fRowBytes,
++			    src + s->offset + (uint64_t)sy * s->bytesPerRow + (uint64_t)sx * 4, s->bytesPerRow,
++			    (size_t)w * 4, h);
++			if (w == (int32_t)fWidth && h == (int32_t)fHeight) {
++				__atomic_store_n(&sweet_fb_last_surface_id, s->id, __ATOMIC_RELEASE);
++			}
++#else
++			for (int32_t y = 0; y < h; y++) {
++				memcpy((void *)(fPixels + (uint64_t)(dy + y) * fRowBytes + (uint64_t)dx * 4),
++				    (const void *)(src + s->offset + (uint64_t)(sy + y) * s->bytesPerRow + (uint64_t)sx * 4),
++				    (size_t)w * 4);
++			}
++#endif
++		}
+ 		s->release();
+ 	}
+ #if defined(ARM64_BOARD_CONFIG_HEROLTE)

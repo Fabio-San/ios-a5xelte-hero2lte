@@ -13,6 +13,7 @@
 #include <fcntl.h>
 #include <objc/message.h>
 #include <objc/runtime.h>
+#include <signal.h>
 #include <stdarg.h>
 #include <stdbool.h>
 #include <stdio.h>
@@ -42,7 +43,7 @@ __cxa_throw(void *ex, void *type, void (*dest)(void *))
    }
    void *bt[14];
    int n = backtrace(bt, 14);
-   int fd = open("/private/var/herolte/cxa.log", O_WRONLY | O_CREAT | O_APPEND, 0644);
+   int fd = open("/tmp/cxa.log", O_WRONLY | O_CREAT | O_APPEND, 0644);
    if (fd >= 0) {
       char line[1024];
       int len = snprintf(line, sizeof(line), "%s: __cxa_throw type=%p", getprogname(), type);
@@ -61,6 +62,33 @@ __cxa_throw(void *ex, void *type, void (*dest)(void *))
       _exit(42);
    }
 }
+
+/*
+ * (0370) L'interposer __cxa_throw non prende le chiamate interne al dyld shared
+ * cache. Quando il processo muore di SIGABRT,butta giu' lo stack dal signal
+ * handler: /tmp e' scrivibile anche da assetsd (mobile), a differenza della
+ * drop zone.
+ */
+static void
+abort_handler(int sig)
+{
+   void *bt[14];
+   int n = backtrace(bt, 14);
+   int fd = open("/tmp/cxa.log", O_WRONLY | O_CREAT | O_APPEND, 0644);
+   if (fd >= 0) {
+      char line[1024];
+      int len = snprintf(line, sizeof(line), "%s: SIGABRT %d", getprogname(), sig);
+      for (int i = 0; i < n && len < (int)sizeof(line) - 20; i++) {
+         len += snprintf(line + len, sizeof(line) - len, " %p", bt[i]);
+      }
+      line[sizeof(line) - 1] = 0;
+      (void)!write(fd, line, strlen(line));
+      (void)!write(fd, "\n", 1);
+      close(fd);
+   }
+   _exit(42);
+}
+
 
 static const char *
 text_of(id object)
@@ -298,6 +326,7 @@ install(void)
       herodrm_log("PosterBoard: home preview in a bitmap: %d", preview != NULL);
    }
    NSSetUncaughtExceptionHandler(uncaught);
+   signal(SIGABRT, abort_handler);   /* 0370 */
    dlopen("/System/Library/Frameworks/OpenGLES.framework/OpenGLES", RTLD_LAZY);
    Class context = objc_getClass("EAGLContext");
    if (context != Nil) {
