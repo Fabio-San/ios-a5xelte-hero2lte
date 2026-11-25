@@ -258,6 +258,7 @@ struct eagl {
 	GLuint program;                 /* the one in use, as CoreAnimation has it */
 	GLuint plain, lookup;           /* programs of ours for when that is none (plain_draw_begin()) */
 	GLint plain_matrix, plain_textured, lookup_matrix;
+	GLint plain_mua_red;   /* 0378: glmuared=1 tinge di rosso il programma generico */
 	GLuint vibrant, masking;        /* two more: what a colour matrix does to what is behind, and to the layer */
 	int blended;                    /* blending is off for such a draw, to be put back after it */
 	bool no_vibrant;                /* the first of the two could not be made */
@@ -347,6 +348,8 @@ static uint32_t slot_calls[SLOTS];
 static int red_test;   /* 0375: glred=1 colors c4p draws red */
 static void *ca_context;                /* CoreAnimation's GLContext */
 static int sb_track;   /* 0376: glsbtrack=1 logs draws in the status-bar band */
+static int mua_red;   /* 0378: glmuared=1 colors the generic program red */
+static int dumped_mua;
 static int check_errors = 1;            /* ask the library for an error after every call (the first frames) */
 static int share_surfaces = 1;          /* boot-arg glcopy=1: 0 */
 /*
@@ -1881,10 +1884,12 @@ static const char plain_fragment[] =
     "#version 300 es\n"
     "uniform lowp sampler2D texture0;\n"
     "uniform lowp float textured;\n"
+    "uniform lowp float mua_red;\n"
     "in lowp vec4 color;\n"
     "in highp vec2 texcoord;\n"
     "out lowp vec4 result;\n"
     "void main() {\n"
+    "  if (mua_red > 0.5) { result = vec4(0.35, 0.0, 0.0, 0.35); return; }\n"
     "  result = textured > 0.5 ? color * texture(texture0, texcoord / vec2(textureSize(texture0, 0))) : color;\n"
     "}\n";
 
@@ -3139,6 +3144,43 @@ plain_draw_begin(struct eagl *e, GLint enabled[4])
 		e->line.vrb += function == FUNCTION_VARIABLE_BLUR;
 	}
 
+	if (mua_red && !dumped_mua && e->bound[0] != 0 && e->framebuffer != 0) {
+		GLint w = 0, h = 0;
+		glActiveTexture(GL_TEXTURE0);
+		glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_WIDTH, &w);
+		glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_HEIGHT, &h);
+		if (w >= 300 && w <= 400 && h >= 40 && h <= 100) {
+			GLint old_fbo = 0, tex = 0;
+			uint8_t *buf = malloc((size_t)w * (size_t)h * 4);
+			dumped_mua = 1;
+			glGetIntegerv(0x8ca6 /* GL_FRAMEBUFFER_BINDING */, &old_fbo);
+			glGenFramebuffers(1, &tex);
+			glBindFramebuffer(0x8d40 /* GL_FRAMEBUFFER */, tex);
+			glFramebufferTexture2D(0x8d40, 0x8ce0 /* COLOR_ATTACHMENT0 */, 0xde1, e->bound[0], 0);
+			glPixelStorei(GL_PACK_ALIGNMENT, 1);
+			glReadPixels(0, 0, w, h, GL_RGBA, GL_UNSIGNED_BYTE, buf);
+			glPixelStorei(GL_PACK_ALIGNMENT, 4);
+			glBindFramebuffer(0x8d40, old_fbo);
+			glDeleteFramebuffers(1, &tex);
+			glActiveTexture(GL_TEXTURE0 + e->unit);
+			if (buf != NULL) {
+				FILE *f = fopen("/private/var/herolte/mua_dump.raw", "wb");
+				unsigned lit = 0, transparent = 0;
+				for (int i = 0; i < w * h; i++) {
+					if (buf[4*i] | buf[4*i+1] | buf[4*i+2]) lit++;
+					if (buf[4*i+3] == 0) transparent++;
+				}
+				say("hakios-gl: MUA_DUMP tex=%u %dx%d lit=%u transparent=%u first=%u,%u,%u,%u\n",
+				    e->bound[0], w, h, lit, transparent, buf[0], buf[1], buf[2], buf[3]);
+				if (f != NULL) {
+					fwrite(buf, 1, (size_t)w * (size_t)h * 4, f);
+					fclose(f);
+				}
+				free(buf);
+			}
+		}
+		glActiveTexture(GL_TEXTURE0 + e->unit);
+	}
 	if (e->unclear != 0 && reads_what_it_writes(e)) {
 		e->unclear = 0;
 	}
@@ -3378,6 +3420,7 @@ plain_draw_begin(struct eagl *e, GLint enabled[4])
 			e->plain = plain_program(plain_fragment, "as they are");
 			e->plain_matrix = glGetUniformLocation(e->plain, "vertex_matrix");
 			e->plain_textured = glGetUniformLocation(e->plain, "textured");
+			e->plain_mua_red = glGetUniformLocation(e->plain, "mua_red");
 		}
 		program = e->plain;
 	}
@@ -3386,6 +3429,9 @@ plain_draw_begin(struct eagl *e, GLint enabled[4])
 	glUniformMatrix4fv(program == e->plain ? e->plain_matrix : e->lookup_matrix, 1, 0, e->matrix != NULL ? e->matrix : identity);
 	if (program == e->plain) {
 		glUniform1f(e->plain_textured, e->bound[0] != 0 ? 1 : 0);
+		if (e->plain_mua_red >= 0) {
+			glUniform1f(e->plain_mua_red, mua_red ? 1.f : 0.f);
+		}
 	}
 	for (GLuint i = 0; i < 3; i++) {
 		glGetVertexAttribiv(i, GL_VERTEX_ATTRIB_ARRAY_ENABLED, &enabled[i]);
@@ -4548,6 +4594,7 @@ install(void)
 			fclose(more);
 		}
 		red_test = strstr(arguments, "glred=1") != NULL;
+		mua_red = strstr(arguments, "glmuared=1") != NULL;
 		sb_track = strstr(arguments, "glsbtrack=1") != NULL;
 		if (sb_track) {
 			/* 0377: solo il log SB_DRAW, SENZA trace globale: il
