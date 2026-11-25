@@ -126,8 +126,44 @@ give_shadow_blur(void)
 static int (*orig_function_supported)(void *context);
 static void (*orig_function_uniform)(void *context, unsigned index, size_t components, size_t count, const float *values);
 
+/*
+ * (0371 diagnostic) Log, una volta, quali funzioni CoreAnimation dice di supportare:
+ * il bridge chiede i numeri di iOS 16.5 ma questa cache 16.7.16 ne ha altri
+ * ("has no function 40" nel log). Una scansione 0..89 di function_supported
+ * ci da' la mappa esatta senza indovinare.
+ */
+static int function_map_done;
+static void
+log_function_map(void *context)
+{
+   if (function_map_done || orig_function_supported == NULL) {
+      return;
+   }
+   function_map_done = 1;
+   unsigned found = 0;
+   char line[384];
+   uint8_t *number = *((uint8_t **)((char *)context + 0x10));
+   uint8_t saved = number[0x10];
+   int len = snprintf(line, sizeof(line), "hakios-ca: supported functions:");
+   for (unsigned f = 0; f < 90; f++) {
+      number[0x10] = (uint8_t)f;
+      if (orig_function_supported(context)) {
+         len += snprintf(line + len, sizeof(line) - len, " %u", f);
+         found++;
+      }
+      if (len > (int)sizeof(line) - 12) {
+         say("%s", line);
+         len = snprintf(line, sizeof(line), "hakios-ca: more:");
+      }
+   }
+   number[0x10] = saved;
+   say("%s (%u total)", line, found);
+}
+
 static int
 my_function_supported(void *context)
+{
+   log_function_map(context);
 {
 	static uint8_t said[256];
 	int supported = orig_function_supported(context);
