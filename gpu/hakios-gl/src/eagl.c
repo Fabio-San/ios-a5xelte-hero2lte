@@ -345,6 +345,7 @@ static __thread struct eagl *current;
 static struct eagl *contexts[8];
 static uint32_t slot_calls[SLOTS];
 static int red_test;   /* 0375: glred=1 colors c4p draws red */
+static int sb_track;   /* 0376: glsbtrack=1 logs draws in the status-bar band */
 static int check_errors = 1;            /* ask the library for an error after every call (the first frames) */
 static int share_surfaces = 1;          /* boot-arg glcopy=1: 0 */
 /*
@@ -1775,6 +1776,17 @@ trace_placed_draw(struct eagl *e, GLenum mode, GLenum type, const void *indices,
 			if (e->arrays[2].pointer != NULL && e->arrays[2].type == GL_FLOAT) {
 				memcpy(where, (const uint8_t *)e->arrays[2].pointer + (size_t)vertex * (size_t)e->arrays[2].stride, 8);
 			}
+		}
+	}
+	if (sb_track && e->colour != 0) {
+		static uint8_t sb_seen[90][8];
+		int fn = ca_context != NULL ? *(*(uint8_t **)((char *)ca_context + 0x10) + 0x10) : 90;
+		/* fascia superiore (o inferiore, l'origine Y puo' essere bottom-up) */
+		if (fn < 90 && low[1] < 130 && sb_seen[fn][0] < 8) {
+			unsigned slot = sb_seen[fn][0]++;
+			say("SB_DRAW: fn=%u slot=%u fbo=%u(%ux%u) rect=%g,%g->%g,%g tex0=%u prog=%u frame=%u\n",
+			    fn, slot, e->framebuffer, 0, 0, (double)low[0], (double)low[1], (double)high[0], (double)high[1],
+			    e->bound[0], e->program, e->frames + 1);
 		}
 	}
 	if (low[0] > trace_place[2] || high[0] < trace_place[0] || low[1] > trace_place[3] || high[1] < trace_place[1]) {
@@ -4547,6 +4559,14 @@ install(void)
 			fclose(more);
 		}
 		red_test = strstr(arguments, "glred=1") != NULL;
+		sb_track = strstr(arguments, "glsbtrack=1") != NULL;
+		if (sb_track) {
+			trace_placed = 1;   /* serve per trace_placed_draw(), senza eagl_tracing */
+			trace_place[0] = 0.f;
+			trace_place[1] = 0.f;
+			trace_place[2] = 2000.f;
+			trace_place[3] = 2000.f;
+		}
 		if ((argument = strstr(arguments, "gltrace=")) != NULL) {
 			trace_last = trace_first = (unsigned)strtoul(argument + 8, (char **)&argument, 10);
 			if (*argument == '-') {
