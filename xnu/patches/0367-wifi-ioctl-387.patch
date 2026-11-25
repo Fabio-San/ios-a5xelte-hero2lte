@@ -1,0 +1,26 @@
+diff --git a/bsd/dev/sweet_apple80211.c b/bsd/dev/sweet_apple80211.c
+--- a/bsd/dev/sweet_apple80211.c
++++ b/bsd/dev/sweet_apple80211.c
+@@ -380,6 +380,10 @@
+ 	case 15:                                /* the mode: a station (APPLE80211_M_STA) */
+ 		request->req_val = 1;
+ 		return 0;
++	case 387: {                             /* 0367: richiesta nuova, non nei Darwin header pubblici: risposta neutra */
++		uint8_t answer[37] = { 0 };
++		return give(request, answer, sizeof(answer));
++	}
+ 	case 51: {                              /* 0366: COUNTRY_CODE, lo stesso ccode=GB dell'NVRAM del telefono */
+ 		char cc[3] = { 'G', 'B', ' ' };
+ 		return give(request, cc, sizeof(cc));
+@@ -578,9 +582,8 @@
+ 	if (request->req_len != sizeof(*asked)) {
+ 		return EINVAL;
+ 	}
+-	if (!hakios_sta_present()) {
+-		return EBUSY;                   /* (the radio is still being brought up: the framework tries again) */
+-	}
++	/* 0367: prima si rispondeva EBUSY e wifid riprovava per ~100 s; ora
++	 * hakios_sta_ask_scan() accoda la richiesta fino all'attach del driver. */
+ 	asked = kalloc_data(sizeof(*asked), Z_WAITOK);
+ 	what = kalloc_data(sizeof(*what), Z_WAITOK | Z_ZERO);
+ 	if (asked == NULL || what == NULL || (error = copyin(request->req_data, asked, sizeof(*asked))) != 0) {

@@ -1,0 +1,25 @@
+diff --git a/bsd/dev/sweet_sta.c b/bsd/dev/sweet_sta.c
+--- a/bsd/dev/sweet_sta.c
++++ b/bsd/dev/sweet_sta.c
+@@ -290,9 +290,18 @@
+ hakios_sta_ask_scan(const struct hakios_sta_scan *what)
+ {
+ 	lck_mtx_lock(&sta_lock);
+-	if (sta_ops == NULL || !sta_on) {
+-		lck_mtx_unlock(&sta_lock);
+-		return sta_ops == NULL ? ENXIO : ENETDOWN;
++	if (sta_ops == NULL) {
++		/* 0367: wifid chiede lo scan prima che il BCM4359 sia pronto. Accodalo:
++		 * il thread lo esegue appena hakios_sta_attach() mette le ops. */
++		asked_scan_what = *what;
++		asked_scan = true;
++		lck_mtx_unlock(&sta_lock);
++		printf("HEROLTE WIFI: scan accodato prima del driver (%u canali)\n", what->frequency_count);
++		return 0;
++	}
++	if (!sta_on) {
++		lck_mtx_unlock(&sta_lock);
++		return ENETDOWN;
+ 	}
+ 	asked_scan_what = *what;
+ 	asked_scan = true;
