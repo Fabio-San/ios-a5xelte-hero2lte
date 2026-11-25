@@ -19,6 +19,10 @@
 #include <string.h>
 #include <unistd.h>
 
+extern void herodrm_log(const char *format, ...);
+extern void NSSetUncaughtExceptionHandler(void (*handler)(id));
+extern const char *getprogname(void);
+
 /*
  * (0368) Un'eccezione C++ lanciata da una funzione noexcept finisce in
  * std::unexpected -> abort: e' il crash di assetsd e MailWidgetExtens. Intercetta
@@ -57,10 +61,6 @@ __cxa_throw(void *ex, void *type, void (*dest)(void *))
       _exit(42);
    }
 }
-
-extern void herodrm_log(const char *format, ...);
-extern void NSSetUncaughtExceptionHandler(void (*handler)(id));
-extern const char *getprogname(void);
 
 static const char *
 text_of(id object)
