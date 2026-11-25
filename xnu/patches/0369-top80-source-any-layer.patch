@@ -1,0 +1,25 @@
+diff --git a/iokit/Kernel/arm/SweetFramebuffer.cpp b/iokit/Kernel/arm/SweetFramebuffer.cpp
+--- a/iokit/Kernel/arm/SweetFramebuffer.cpp
++++ b/iokit/Kernel/arm/SweetFramebuffer.cpp
+@@ -984,15 +984,16 @@
+ 		/* 0368: la stessa schizzo della superficie SORGENTE: se i rettangoli
+ 		 * ci sono qui ma non nel pannello, il guasto e' nel presentation path. */
+ 		static int src80_done;
+-		if (!src80_done && fSwaps > 120 && w == (int32_t)fLogicalW && h == (int32_t)fLogicalH &&
+-		    s->kernelAddress() != 0 && s->bytesPerRow > 0) {
++		if (!src80_done && fSwaps > 120 && w > 16 && h > 16 &&
++		    s->kernelAddress() != 0 && s->bytesPerRow >= (uint32_t)w * 4) {
+ 			src80_done = 1;
+ 			for (uint32_t y = 0; y < 80 && y < (uint32_t)s->height; y += 8) {
+ 				volatile uint32_t *row = (volatile uint32_t *)(s->kernelAddress() + (uintptr_t)s->offset +
+ 				    (uint64_t)y * s->bytesPerRow);
+-				IOLog("HERO TOP80 SRC: layer=%u y=%u %08x %08x %08x %08x %08x %08x %08x %08x\n", layer, y,
+-				    row[40], row[150], row[250], row[350],
+-				    row[450], row[550], row[650], row[700]);
++				uint32_t x1 = (uint32_t)w / 8, x2 = (uint32_t)w / 4, x3 = (uint32_t)w / 2;
++				uint32_t x4 = (uint32_t)w * 3 / 4, x5 = (uint32_t)w - 1;
++				IOLog("HERO TOP80 SRC: layer=%u %ux%u y=%u %08x %08x %08x %08x %08x %08x\n", layer, w, h, y,
++				    row[0], row[x1], row[x2], row[x3], row[x4], row[x5]);
+ 			}
+ 		}
+ #endif
