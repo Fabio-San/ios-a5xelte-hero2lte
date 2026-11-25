@@ -345,6 +345,7 @@ static __thread struct eagl *current;
 static struct eagl *contexts[8];
 static uint32_t slot_calls[SLOTS];
 static int red_test;   /* 0375: glred=1 colors c4p draws red */
+static void *ca_context;                /* CoreAnimation's GLContext */
 static int sb_track;   /* 0376: glsbtrack=1 logs draws in the status-bar band */
 static int check_errors = 1;            /* ask the library for an error after every call (the first frames) */
 static int share_surfaces = 1;          /* boot-arg glcopy=1: 0 */
@@ -2115,7 +2116,6 @@ number_text(const float *values, size_t from, size_t count)
 	return text;
 }
 
-static void *ca_context;                /* CoreAnimation's GLContext */
 static GLfloat function_values[90][20];
 static uint8_t function_given[90];
 
