@@ -349,6 +349,7 @@ static int red_test;   /* 0375: glred=1 colors c4p draws red */
 static void *ca_context;                /* CoreAnimation's GLContext */
 static int sb_track;   /* 0376: glsbtrack=1 logs draws in the status-bar band */
 static int mua_red;   /* 0378: glmuared=1 colors the generic program red */
+static int cpu_sample;   /* 0379: glcpusample=1 samples IOSurface CPU memory */
 static int dumped_mua;
 static int check_errors = 1;            /* ask the library for an error after every call (the first frames) */
 static int share_surfaces = 1;          /* boot-arg glcopy=1: 0 */
@@ -796,6 +797,28 @@ bgra_to_deep(const uint8_t *in, IOSurfaceRef surface, GLsizei width, GLsizei hei
 
 /* Fill a texture, which is bound, from its IOSurface, unless it is the surface. */
 static void
+/* 0379: campiona la memoria CPU di una IOSurface senza glReadPixels (no GPU stall). */
+static unsigned
+cpu_lit(const uint8_t *base, size_t row, unsigned w, unsigned h)
+{
+	unsigned lit = 0;
+
+	if (base == NULL || w == 0 || h == 0) {
+		return 0;
+	}
+	for (unsigned i = 0; i < 64; i++) {
+		unsigned y = (unsigned)(((uint64_t)i * 977u * h) / 64u) % h;
+		unsigned x = (unsigned)(((uint64_t)i * 613u * w) / 64u) % w;
+		uint32_t v;
+
+		memcpy(&v, base + (size_t)y * row + (size_t)x * 4, sizeof(v));
+		if (v != 0) {
+			lit++;
+		}
+	}
+	return lit;
+}
+
 surface_to_texture(struct eagl *e, struct image *image)
 {
 	if (image->deep) {              /* (Galaxy S7 port) */
@@ -1189,6 +1212,23 @@ frame_begin(struct eagl *e)
 	for (unsigned i = 0; i < e->image_count; i++) {
 		struct image *image = &e->images[i];
 
+		if (cpu_sample && image->surface != NULL && !image->target && !image->shared &&
+		    (IOSurfaceGetWidth(image->surface) >= 300 || IOSurfaceGetArea(image->surface) >= 200000)) {
+			unsigned lit = 0, planes = IOSurfaceGetPlaneCount(image->surface);
+			const uint8_t *base = NULL;
+			size_t row = 0;
+
+			if (IOSurfaceLock(image->surface, kIOSurfaceLockReadOnly, NULL) == 0) {
+				base = planes > 0 ? IOSurfaceGetBaseAddressOfPlane(image->surface, 0) : IOSurfaceGetBaseAddress(image->surface);
+				row = planes > 0 ? IOSurfaceGetBytesPerRowOfPlane(image->surface, 0) : IOSurfaceGetBytesPerRow(image->surface);
+				lit = cpu_lit(base, row, IOSurfaceGetWidth(image->surface), IOSurfaceGetHeight(image->surface));
+				IOSurfaceUnlock(image->surface, kIOSurfaceLockReadOnly, NULL);
+			}
+			say("hakios-gl: CPU_SAMPLE id=%u %ux%u planes=%u seed=%u was=%u base=%p cpu_lit=%u/64 frame=%u\n",
+			    IOSurfaceGetID(image->surface), IOSurfaceGetWidth(image->surface),
+			    IOSurfaceGetHeight(image->surface), planes, IOSurfaceGetSeed(image->surface),
+			    image->seed, base, lit, e->frames + 1);
+		}
 		if (image->target || image->shared || IOSurfaceGetSeed(image->surface) == image->seed) {
 			continue;
 		}
@@ -4595,6 +4635,7 @@ install(void)
 		}
 		red_test = strstr(arguments, "glred=1") != NULL;
 		mua_red = strstr(arguments, "glmuared=1") != NULL;
+		cpu_sample = strstr(arguments, "glcpusample=1") != NULL;
 		sb_track = strstr(arguments, "glsbtrack=1") != NULL;
 		if (sb_track) {
 			/* 0377: solo il log SB_DRAW, SENZA trace globale: il
