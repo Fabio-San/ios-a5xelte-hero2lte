@@ -1196,7 +1196,7 @@ frame_begin(struct eagl *e)
 		trace_function_met = 0;
 		trace_function = -1;
 	}
-	trace_placing = 0;
+	trace_placing = sb_track ? 1 : 0;   /* 0382: SB_DRAW serve trace_placing, senza trace globale */
 	if (trace_left != 0) {
 		trace_left--;
 		eagl_tracing = !trace_placed;
@@ -1820,6 +1820,26 @@ trace_placed_draw(struct eagl *e, GLenum mode, GLenum type, const void *indices,
 				memcpy(where, (const uint8_t *)e->arrays[2].pointer + (size_t)vertex * (size_t)e->arrays[2].stride, 8);
 			}
 		}
+	}
+	/* 0382: solo il log della fascia status bar, senza trace globale ne' glReadPixels. */
+	if (sb_track && e->colour != 0) {
+		static uint8_t sb_seen[90][8];
+		int fn = ca_context != NULL ? *(*(uint8_t **)((char *)ca_context + 0x10) + 0x10) : 90;
+
+		if (fn < 90 && low[1] < 130 && sb_seen[fn][0] < 8) {
+			unsigned slot = sb_seen[fn][0]++;
+			struct image *src = image_of(e, e->bound[0]);
+			struct image *dst = image_of(e, e->colour);
+			const char *origin = src == NULL ? "orphan" : src->shared ? "SHARED" :
+			    src->wrapped ? "WRAPPED" : src->surface != NULL ? "SURFCOPY" : "TEX2D";
+
+			say("hakios-gl: SB_DRAW fn=%u slot=%u fbo=%u(%ux%u) rect=%g,%g->%g,%g tex0=%u %s %ux%u prog=%u blend=%s frame=%u\n",
+			    fn, slot, e->framebuffer, dst != NULL ? (unsigned)dst->width : 0, dst != NULL ? (unsigned)dst->height : 0,
+			    (double)low[0], (double)low[1], (double)high[0], (double)high[1], e->bound[0], origin,
+			    src != NULL ? (unsigned)src->width : 0, src != NULL ? (unsigned)src->height : 0, e->program,
+			    glIsEnabled(GL_BLEND) ? "on" : "off", e->frames + 1);
+		}
+		return;                 /* (0382: niente gl-at: sotto sb_track, evita il flood) */
 	}
 	if (low[0] > trace_place[2] || high[0] < trace_place[0] || low[1] > trace_place[3] || high[1] < trace_place[1]) {
 		return;
@@ -4662,9 +4682,8 @@ install(void)
 		cpu_sample = strstr(arguments, "glcpusample=1") != NULL;
 		sb_track = strstr(arguments, "glsbtrack=1") != NULL;
 		if (sb_track) {
-			/* 0377: solo il log SB_DRAW, SENZA trace globale: il
-			 * glReadPixels di trace_placed_look() su ogni frame
-			 * sincronizzava la GPU e bloccava backboardd. */
+			/* 0382: solo trace_place; trace_placing e' rimesso a 1 da
+			 * frame_begin ogni frame, senza eagl_tracing ne' glReadPixels. */
 			trace_place[0] = 0.f;
 			trace_place[1] = 0.f;
 			trace_place[2] = 2000.f;
