@@ -1455,13 +1455,12 @@ shared_picture_fresh(struct eagl *e, struct image *image)
 {
 	uint32_t seed = IOSurfaceGetSeed(image->surface);
 
-	if (seed == image->seed && e->frames - image->cleaned < 30) {
-		return;
-	}
+	/* 0381: TEST: cache pulita a OGNI bind, senza il throttle di 30 frame
+	 * (con seed fermo a 1 i dati restavano stale per ~29 frame). */
 	hakios_gl_surface_written(e->gl, IOSurfaceGetID(image->surface));
-	if (shared_cleans++ < 20) {
-		say("hakios-gl: texture %u is surface %u's memory, drawn into elsewhere (seed %u, was %u): its caches cleaned for "
-		    "the GPU\n", image->texture, IOSurfaceGetID(image->surface), seed, image->seed);
+	if (shared_cleans++ < 100) {
+		say("hakios-gl: 0381 clean texture %u surface %u seed %u was %u cleans %u frame %u\n",
+		    image->texture, IOSurfaceGetID(image->surface), seed, image->seed, shared_cleans, e->frames + 1);
 	}
 	image->seed = seed;
 	image->cleaned = e->frames;
@@ -3799,6 +3798,19 @@ my_glTexImage2D(void *context, GLenum target, GLint level, GLint internal, GLsiz
 	if (level == 0) {
 		note_format(pixels ? "filled" : "empty", (GLenum)internal, format, type, width, height);
 	}
+	/* 0381:Controllo lato CPU della mask 358x89 GL_ALPHA, senza FBO ne' glReadPixels. */
+	if (format == 0x1906 && width == 358 && height == 89 && pixels != NULL) {
+		const uint8_t *q = pixels;
+		unsigned nz = 0;
+
+		for (unsigned i = 0; i < 64; i++) {
+			size_t at = (size_t)(((uint64_t)i * 977u * 31862u) / 64u);
+
+			nz += q[at] != 0;
+		}
+		say("hakios-gl: 0381 ALPHA_MASK pixels=%p non_zero=%u/64 first=%u,%u,%u,%u frame=%u\n",
+		    pixels, nz, q[0], q[1], q[2], q[3], e->frames + 1);
+	}
 	if (eagl_tracing) {
 		eagl_trace("glTexImage2D(%#x, %d, %#x, %d, %d, %d, %#x, %#x, %p)\n", target, level, internal, width, height, border,
 		    format, type, pixels);
@@ -3831,6 +3843,18 @@ my_glTexSubImage2D(void *context, GLenum target, GLint level, GLint x, GLint y, 
 	struct eagl *e = context;
 
 	EAGL_ENTER(e, 0x9a0);
+	if (format == 0x1906 && width == 358 && height == 89 && pixels != NULL) {
+		const uint8_t *q = pixels;
+		unsigned nz = 0;
+
+		for (unsigned i = 0; i < 64; i++) {
+			size_t at = (size_t)(((uint64_t)i * 977u * 31862u) / 64u);
+
+			nz += q[at] != 0;
+		}
+		say("hakios-gl: 0381 ALPHA_SUB pixels=%p non_zero=%u/64 first=%u,%u,%u,%u frame=%u\n",
+		    pixels, nz, q[0], q[1], q[2], q[3], e->frames + 1);
+	}
 	if (eagl_tracing) {
 		eagl_trace("glTexSubImage2D(%#x, %d, %d, %d, %d, %d, %#x, %#x, %p)\n", target, level, x, y, width, height, format, type,
 		    pixels);
