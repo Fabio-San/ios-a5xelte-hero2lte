@@ -1342,9 +1342,14 @@ frame_end(struct eagl *e, bool finished)
 		for (unsigned i = 0; i < e->image_count; i++) {
 			struct image *im = &e->images[i];
 
-			if (im->target && im->drawn && im->surface != NULL && IOSurfaceGetPlaneCount(im->surface) == 0 &&
+			if (im->target && im->surface != NULL &&
 			    (display == NULL || (size_t)im->width * (size_t)im->height >
 			     (size_t)display->width * (size_t)display->height)) {
+				if (snaps_done == 1) {
+					say("hakios-gl: 0385 cand target %ux%u surf %u planes %u drawn %u\n",
+					    im->width, im->height, IOSurfaceGetID(im->surface),
+					    IOSurfaceGetPlaneCount(im->surface), im->drawn);
+				}
 				display = im;
 			}
 		}
@@ -1352,8 +1357,11 @@ frame_end(struct eagl *e, bool finished)
 			say("hakios-gl: 0385 SNAP no display surface at frame %u\n", e->frames);
 		}
 		if (display != NULL && IOSurfaceLock(display->surface, kIOSurfaceLockReadOnly, NULL) == 0) {
-			const uint8_t *base = IOSurfaceGetBaseAddress(display->surface);
-			size_t row = IOSurfaceGetBytesPerRow(display->surface);
+			unsigned planes = IOSurfaceGetPlaneCount(display->surface);
+			const uint8_t *base = planes > 0 ? IOSurfaceGetBaseAddressOfPlane(display->surface, 0) :
+			    IOSurfaceGetBaseAddress(display->surface);
+			size_t row = planes > 0 ? IOSurfaceGetBytesPerRowOfPlane(display->surface, 0) :
+			    IOSurfaceGetBytesPerRow(display->surface);
 			unsigned rows = (unsigned)display->height < 160 ? (unsigned)display->height : 160;
 			snprintf(snap_path, sizeof(snap_path), "/private/var/herolte/snap_%u.raw", e->frames);
 			FILE *f = fopen(snap_path, "wb");
