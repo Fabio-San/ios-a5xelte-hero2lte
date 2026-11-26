@@ -1,7 +1,7 @@
 diff --git a/bsd/dev/herolte_gpu.c b/bsd/dev/herolte_gpu.c
 --- a/bsd/dev/herolte_gpu.c
 +++ b/bsd/dev/herolte_gpu.c
-@@ -1786,8 +1786,25 @@ hfb_setup_locked(void)
+@@ -1786,7 +1786,24 @@ hfb_setup_locked(void)
  		printf("HEROLTE FB2: MMU flush timeout; one buffer\n");
  		return;
  	}
