@@ -1223,8 +1223,8 @@ frame_begin(struct eagl *e)
 				glGenTextures(1, &keep_tex);
 				glBindTexture(GL_TEXTURE_2D, keep_tex);
 				glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, 750, 1334, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
-				glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-				glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+				glTexParameteri(GL_TEXTURE_2D, 0x2801, GL_NEAREST);
+				glTexParameteri(GL_TEXTURE_2D, 0x2800, GL_NEAREST);
 				glGenFramebuffers(1, &keep_fbo);
 				glBindFramebuffer(GL_FRAMEBUFFER, keep_fbo);
 				glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, keep_tex, 0);
@@ -3449,8 +3449,8 @@ plain_draw_begin(struct eagl *e, GLint enabled[4])
 			}
 			glActiveTexture(GL_TEXTURE0 + BACKDROP_UNIT);
 			glBindTexture(GL_TEXTURE_2D, e->backdrop);
-			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+			glTexParameteri(GL_TEXTURE_2D, 0x2801, GL_NEAREST);
+			glTexParameteri(GL_TEXTURE_2D, 0x2800, GL_NEAREST);
 			glCopyTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, box[0], box[1], box[2], box[3], 0);
 			glActiveTexture(GL_TEXTURE0 + e->unit);
 			e->backdrop_bound = true;
@@ -3510,8 +3510,8 @@ plain_draw_begin(struct eagl *e, GLint enabled[4])
 		}
 		glActiveTexture(GL_TEXTURE0 + BACKDROP_UNIT);
 		glBindTexture(GL_TEXTURE_2D, e->backdrop);
-		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+		glTexParameteri(GL_TEXTURE_2D, 0x2801, GL_NEAREST);
+		glTexParameteri(GL_TEXTURE_2D, 0x2800, GL_NEAREST);
 		glCopyTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, box[0], box[1], box[2], box[3], 0);
 		glActiveTexture(GL_TEXTURE0 + e->unit);
 		e->backdrop_bound = true;
