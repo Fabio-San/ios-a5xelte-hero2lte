@@ -26,6 +26,64 @@ Apple's IPSW in a private repository and take the firmware from your own phone.
 | Touch, buttons, battery | Working |
 | Not working | modem, Bluetooth, camera, sensors, sleep, Face ID, Metal (the Today view and Control Center blurs are black), Siri's voices |
 
+## Build (what is public vs private)
+
+Everything needed to **compile** is in this repo and in GitHub Actions:
+
+1. `xnu` workflow → artifact `xnu-kernel-macos-15-intel` (`kernel.development.herolte`).
+   S7 patches are `xnu/patches/0200*` and newer; `MACHINE_CONFIG=HEROLTE`.
+2. `mesa-ios` workflow → artifact `mesa-ios`: `libhakiosgl.dylib` (installed in
+   the drop zone as `lib/libheroeagl.dylib`), `libhakios-metal`, `HeroMetal.bundle`,
+   `hero-run`, `osmesa-test`.
+3. `herolte-pack-boot.py` + `tools/mkadt_herolte.py --iphone8` build `xnu-boot.img`
+   from the stock BOOT, the kernel, the ADT and a **boot line under 608 characters**
+   (`docs/herolte-howto.md`, `tools/fase2_prepare_boot.sh` in the private workspace).
+4. The iOS root image is built in a **private** repo (`ios-root` workflow) from an
+   Apple IPSW; the BCM4359 firmware is copied **from your own phone**. Neither is here.
+5. Flash BOOT and USERDATA from TWRP. Do not touch S-Boot or Download mode. Boot iOS
+   from TWRP every time (the touch controller needs APM SRAM reinitialisation).
+
+A full end-to-end guide is [docs/herolte-howto.md](docs/herolte-howto.md).
+
+## Known issues (2026-11-26)
+
+- **Status bar rectangles / "analog TV" noise** in the top band: appears when the
+  bar is repainted (spinner next to Wi-Fi, Safari page load, scrolling, Home page 3+),
+  at the lock screen, and before the Apple logo. The first two Home pages are clean.
+  Not a shader/colour bug: CPU sampling shows the IOSurfaces are populated, and
+  forcing the CA blur functions to red only colours the translucency (dock, search,
+  Safari bottom bar), not the noise. Zeroing FB2, disabling double buffering,
+  `herogpu_flush=0`, `glwait=0`, `glfetch=0` and iOS 18 were all tested without effect.
+  Android/Lineage on the same panel is clean, so it is our software, not hardware.
+- Metal is not exposed: CoreAnimation is forced onto the legacy OpenGL ES path.
+  No modem, Bluetooth, camera, sensors, sleep, Face ID or Siri voices.
+
+Log and diagnostic scripts: `tools/herolte-log-pull.py`, `tools/herolte-hfs-read.py`.
+Detailed investigation: `docs/PIANO_A_RETTANGOLI.md`, `docs/PROMPT_GEMINI_*.md`,
+`docs/PIANO_GPU_FB2.md`, `docs/PIANO_RISCRITTURA_GPU_DISPLAY.md`.
+
+## Roadmap — GPU / display rewrite
+
+The next work is the GPU/display pipeline, in three levels (full technical brief:
+[docs/PIANO_TECNICO_GEMINI.md](docs/PIANO_TECNICO_GEMINI.md)):
+
+1. **Level 1 (1-3 weeks)** — Job batching in `herolte_gpu.c` (one or two submits
+   per frame instead of ~1600/s) and a kernel fence before the display flip, so
+   `glFinish()` in `eagl.c:frame_end()` can be removed and `HakiosWaitsForGPU`
+   published. Real IOSurface seed on `SweetSurface::Unlock`, `WrapClientImage`
+   (sel 6), and dirty-range cache maintenance.
+2. **Level 2 (3-8 weeks)** — Zero-copy VGR0 swapchain (render straight into
+   the 750×1334 buffers, no `target_to_surface()` copy, with partial-damage
+   preservation), cluster-aware scheduler for the 4 Mongoose + 4 A53 cores,
+   DVFS for MIF/INT/G3D with TMU, UFS 2.0 32-tag/PRDT, and real display sleep.
+3. **Level 3 (2-4+ months)** — Native Metal shim: AIR → NIR → Midgard ISA on
+   the Mali-T880, so QuartzCore no longer needs the GLES bridge (and iOS 26
+   becomes reachable).
+
+Gate before Level 1: a one-shot kernel snapshot of the 750×1334 source buffer
+(`herosnap=N`, patch `0388`) to determine whether the noise is already in the
+Mali-written frame or appears later in DECON/VGR0.
+
 Thanks to [Scion](https://github.com/Scion-Project/scion-kernel) and
 [danstronics/ios-s9plus-exynos](https://github.com/danstronics/ios-s9plus-exynos) (Galaxy S9/S9+):
 the display flip, the CoreAnimation timing, the UI-thread migration and the RAM banks follow their work.
