@@ -5,7 +5,7 @@
  extern "C" bool herolte_fb_two_buffers(void);
  extern "C" void herolte_fb_primary(void);
 +
-+/* 0388: herosnap=N dumps rows 64..126 of the 750x1334 GPU source at vsync N. */
++/* 0388: herosnap=N dumps the 750x1334 source band every 60 frames for 10 s. */
 +static uint32_t hero_snap_at;
  extern "C" volatile uint64_t herolte_screen_off_at;    /* bsd/dev/herolte_gpu.c (0330) */
  extern "C" boolean_t mach_timer_coalescing_enabled;    /* osfmk/kern/timer_call.c, sysctl kern.timer_coalescing_enabled */
@@ -18,23 +18,26 @@
  	fPerfLog = perf != 0;
  	fPerfFrames = fPerfBytes = fPerfNS = fPerfMaxNS = 0;
  	fPerfWindowStart = mach_absolute_time();
-@@ -520,6 +524,25 @@
+@@ -520,6 +524,28 @@
  		    (IOMobileFramebufferUserClient *)fb->fClients->getObject(i);
  		client->notify(SWEET_FB_NOTIFY_VSYNC, values, 6);
  	}
-+	/* 0388: one-shot CPU read of the Mali's 750x1334 source buffer (FB,
-+	 * 0xe2a00000, already mapped at fPixels). VGR0 scales it to the panel,
-+	 * so the panel geometry here would read the wrong pixels. */
-+	if (hero_snap_at != 0 && count == hero_snap_at && fb->fPixels != 0) {
++	/* 0388: CPU read of the Mali's 750x1334 source (FB at fPixels). Several
++	 * frames are dumped so the noisy one is not missed. */
++	if (hero_snap_at != 0 && count >= hero_snap_at && count - hero_snap_at <= 600 &&
++	    ((count - hero_snap_at) % 60) == 0 && fb->fPixels != 0) {
 +		const uint32_t sw = 750, srow = 3072;
 +
 +		IOLog("HERO SNAP: frame %llu source %ux%u row %u\n", (unsigned long long)count, sw, 1334u, srow);
 +		for (uint32_t y = 0; y < 32; y++) {
 +			uint32_t row_y = 64 + y * 2;
 +			const uint32_t *line = (const uint32_t *)(fb->fPixels + (uint64_t)row_y * srow);
-+			char buf[640];
++			char buf[1280];
 +			size_t used = 0;
 +
++			for (uint32_t x = 0; x < 64 && used + 16 < sizeof(buf); x++) {
++				used += (size_t)snprintf(buf + used, sizeof(buf) - used, " %08x", line[x]);
++			}
 +			for (uint32_t x = sw - 64; x < sw && used + 16 < sizeof(buf); x++) {
 +				used += (size_t)snprintf(buf + used, sizeof(buf) - used, " %08x", line[x]);
 +			}
