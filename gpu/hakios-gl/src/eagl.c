@@ -355,6 +355,7 @@ static int red_fn = -1;  /* 0383: glred_fn=N colors CoreAnimation's function N r
 static int shader_dump;  /* 0383: glshaderdump=1 dumps the linked shaders */
 static int zero_empty;   /* 0384: glzero_empty=1 zero-fills glTexImage2D(..., NULL) */
 static unsigned zeroed_count;
+static unsigned snap_frame;  /* 0385: glsnap=N dumps the display surface's top rows */
 static int dumped_mua;
 
 /* 0383: true when this draw belongs to CoreAnimation's backdrop-blur chain. */
@@ -1325,6 +1326,38 @@ frame_end(struct eagl *e, bool finished)
 			if (shown_texture != 0) {
 				show_texture(e, &e->images[i]);
 			}
+		}
+	}
+	/* 0385: one-shot snapshot of the surface that is sent to the display,
+	 * read on the CPU with IOSurfaceLock(RO): no glReadPixels, no GPU stall. */
+	if (snap_frame != 0 && e->frames >= snap_frame && (e->frames % snap_frame) == 0) {
+		struct image *display = NULL;
+		char snap_path[128];
+
+		for (unsigned i = 0; i < e->image_count; i++) {
+			struct image *im = &e->images[i];
+
+			if (im->target && im->drawn && im->surface != NULL && IOSurfaceGetPlaneCount(im->surface) == 0 &&
+			    (display == NULL || (size_t)im->width * (size_t)im->height >
+			     (size_t)display->width * (size_t)display->height)) {
+				display = im;
+			}
+		}
+		if (display != NULL && IOSurfaceLock(display->surface, kIOSurfaceLockReadOnly, NULL) == 0) {
+			const uint8_t *base = IOSurfaceGetBaseAddress(display->surface);
+			size_t row = IOSurfaceGetBytesPerRow(display->surface);
+			unsigned rows = (unsigned)display->height < 160 ? (unsigned)display->height : 160;
+			snprintf(snap_path, sizeof(snap_path), "/private/var/herolte/snap_%u.raw", e->frames);
+			FILE *f = fopen(snap_path, "wb");
+
+			if (f != NULL) {
+				fwrite(base, 1, row * rows, f);
+				fclose(f);
+				say("hakios-gl: 0385 SNAP frame %u surface %u %ux%u rows %u row %zu bytes %zu -> %s\n",
+				    e->frames, IOSurfaceGetID(display->surface), IOSurfaceGetWidth(display->surface),
+				    IOSurfaceGetHeight(display->surface), rows, row, row * rows, snap_path);
+			}
+			IOSurfaceUnlock(display->surface, kIOSurfaceLockReadOnly, NULL);
 		}
 	}
 	if (!e->in_frame) {
@@ -4777,6 +4810,13 @@ install(void)
 			}
 			shader_dump = strstr(arguments, "glshaderdump=1") != NULL;
 			zero_empty = strstr(arguments, "glzero_empty=1") != NULL;
+			{
+				const char *a = strstr(arguments, "glsnap=");
+
+				if (a != NULL) {
+					snap_frame = (unsigned)strtoul(a + 7, NULL, 10);
+				}
+			}
 		}
 		sb_track = strstr(arguments, "glsbtrack=1") != NULL;
 		if (sb_track) {
