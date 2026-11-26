@@ -153,6 +153,23 @@ no longer exists.
 
 Start with a single CAMetalLayer triangle, then move QuartzCore to native Metal.
 
+## Failed experiment: single-texture frame preservation (glpreserve)
+
+A full-frame redraw was attempted by keeping one texture with the previous
+frame and blitting it into the target at the start of every frame, so every
+pixel would be written even where CoreAnimation does partial updates.
+Result: **much worse** — most of the UI missing, flickering, chunks of screen
+appearing and disappearing. Reason: the display uses **two rotating 750×1334
+targets** (framebuffer 6 / texture 8 and framebuffer 7 / texture 11), while the
+kept texture is single. At `frame_end` it saved buffer A, at `frame_begin` it
+blitted that content into buffer B (and vice versa), so each buffer received
+the *other* buffer's stale frame. The log confirmed increased texture/FBO churn
+(`empty 0x1908` 122 vs 77, many more `glBindFramebuffer`) with no crash.
+
+Lesson: preservation must be **per-buffer**, or the swapchain must render
+genuinely full frames. Recycling one stale frame cannot fix a stale-content
+bug — it propagates it. The code has been removed.
+
 ## Level 1.1 — implementation plan (kernel fence first)
 
 Measured baseline (`boot-0382.txt`): ~1410 submits/s,
