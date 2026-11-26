@@ -153,6 +153,60 @@ no longer exists.
 
 Start with a single CAMetalLayer triangle, then move QuartzCore to native Metal.
 
+## Level 1.1 — implementation plan (kernel fence first)
+
+Measured baseline (`boot-0382.txt`): ~1410 submits/s,
+`GPU 2719 ms / submit calls 3209 ms` over 5 s, `glFinish()` ~4 ms/frame in
+`eagl.c:frame_end()`. Mesa already has a userland async queue
+(`HERO_ASYNC=1` in `gpu/mesa/herodrm.c:412-500`), so the caller no longer
+blocks on each submit — but `glFinish()` still blocks the frame thread.
+
+Order chosen to keep the boot stable:
+
+1. **Kernel fence primitive (isolated, no behaviour change).**
+   - `xnu/bsd/dev/herolte_gpu.c`: add `static uint64_t hg_seq;` incremented
+     after every successful `hg_run()` in `herolte_gpu_submit()`; export
+     `uint64_t herolte_gpu_fence(void)`.
+   - `xnu/iokit/Kernel/arm/HeroGPU.cpp`: new selectors
+     `kHeroGPUFence = 8` (returns the current seq) and
+     `kHeroGPUWaitFence = 9` (input seq, waits under `hg_mtx` with a
+     `pthread_cond`/`wait_result` until `hg_seq >= seq`; bounded, asleep).
+   - `gpu/mesa/herodrm.c`: two thin wrappers around the new selectors;
+     no caller yet.
+   - Test: `hero_mtl_test`-style userland client reads the fence before and
+     after a submit, checks it advances by one; `glframes=1` frame counters
+     unchanged.
+
+2. **Wire the fence into the display path.**
+   - `gpu/hakios-gl/src/eagl.c:frame_end()`: when
+     `HakiosWaitsForGPU` is published, skip `glFinish()` and hand the fence
+     seq to `SwapEnd` instead.
+   - `xnu/iokit/Kernel/arm/SweetFramebuffer.cpp`: before
+     `PINGPONG_UPDATE` / VGR0 base-address change, wait for that seq.
+   - Publish `HakiosWaitsForGPU = true` only after step 2 is working —
+     otherwise DECON would read half-rendered frames (Gemini's ordering rule).
+   - Measure: median frame time from `tools/compare_frame_times.py` must drop
+     from ~10 ms without losing frames or breaking touch/Wi-Fi.
+
+3. **Job batching.**
+   - New selector `kHeroGPUSubmitBatch`: input array of `(jc, js)` pairs,
+     output one fence seq; kernel takes `hg_mtx` once and programs several
+     job chains in the Midgard slots.
+   - Chain JS1 (tiler) → JS0 (fragment) through `JSn_HEAD_NEXT` /
+     `JSn_COMMAND_NEXT` and the descriptor `next_job` pointer, so no userland
+     round trip between the two stages.
+   - `gpu/mesa/herodrm.c:submit()` emits one batch per frame instead of one
+     call per job; keep the existing single-submit path as fallback.
+   - Core affinity `SHADER_PRESENT_LO = 0xff0f` only with 5–10 ms power-off
+     hysteresis.
+   - Target: from ~1410 submits/s to 60–120 submits/s.
+
+4. **Only then**: zero-copy VGR0 swapchain with dirty-rect preservation
+   (Level 1.2) and clean IOSurface seed/wrap (Level 1.3).
+
+Each step is a separate commit and a separate flash. Revert immediately if
+frame time gets worse, frames tear, touch dies or Wi-Fi disconnects.
+
 ## Execution order
 
 1. Close the `herosnap` gate.
