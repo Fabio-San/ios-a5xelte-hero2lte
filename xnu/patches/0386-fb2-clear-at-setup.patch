@@ -1,0 +1,29 @@
+diff --git a/bsd/dev/herolte_gpu.c b/bsd/dev/herolte_gpu.c
+--- a/bsd/dev/herolte_gpu.c
++++ b/bsd/dev/herolte_gpu.c
+@@ -1786,8 +1786,25 @@ hfb_setup_locked(void)
+ 		printf("HEROLTE FB2: MMU flush timeout; one buffer\n");
+ 		return;
+ 	}
+ 	hg_wr(hfb_idma, 0x04, 1u << 19);        /* a stale read error is not ours */
++	/*
++	 * 0386: FB2 is 16 MiB of the first DRAM bank outside XNU's RAM. S-Boot
++	 * only initialised FB (0xe2a00000); FB2 still holds whatever the
++	 * bootloader left there. Until the GPU has painted every pixel, a flip
++	 * to FB2 shows that residue: the bands before the Apple logo and the
++	 * analog-style noise when CoreAnimation repaints only part of the
++	 * status bar. Clear it once before the first GPU draw.
++	 */
++	{
++		vm_offset_t fb2 = ml_io_map(HG_FB2_PA, HG_PANEL_BYTES);
++
++		if (fb2 == 0) {
++			printf("HEROLTE FB2: cannot map %#llx for the clear; one buffer\n", HG_FB2_PA);
++			return;
++		}
++		hg_zero(fb2, HG_PANEL_BYTES);
++		__asm__ volatile ("dsb sy" ::: "memory");
++	}
+ 	hfb_state = 1;
+ 	printf("HEROLTE FB2: two buffers, %#llx and %#llx (GPU VA %#llx), on IDMA G1\n", HG_FB_PA, HG_FB2_PA, HG_PANEL2_VA);
+ }
