@@ -1,0 +1,35 @@
+--- a/iokit/Kernel/arm/HeroGPU.cpp
++++ b/iokit/Kernel/arm/HeroGPU.cpp
+@@ -46,6 +46,8 @@
+ bool herolte_gpu_map(uint64_t va, const uint64_t *pages, unsigned n);
+ void herolte_gpu_unmap(uint64_t va, unsigned n);
+ uint32_t herolte_gpu_submit(unsigned js, uint64_t jc, uint64_t *us);
++uint64_t herolte_gpu_fence(void);
++uint32_t herolte_gpu_wait_fence(uint64_t seq, uint64_t *us);
+ }
+ 
+ enum {
+@@ -57,6 +59,8 @@
+ 	kHeroGPULog      = 5,
+ 	kHeroGPUSurfaceBO = 6,
+ 	kHeroGPUSyncBO   = 7,
++	kHeroGPUFence    = 8,
++	kHeroGPUWaitFence = 9,
+ };
+ 
+ #define HEROGPU_MAX_BOS         4096
+@@ -453,6 +457,14 @@
+ 		}
+ 		break;
+ 	}
++	case kHeroGPUFence:
++		out[0] = herolte_gpu_fence();
++		outCount = 1;
++		break;
++	case kHeroGPUWaitFence:
++		out[0] = herolte_gpu_wait_fence(in0, &out[1]);
++		outCount = 2;
++		break;
+ 	case kHeroGPUSyncBO: {
+ 		struct herogpu_bo *bo = in0 && in0 <= HEROGPU_MAX_BOS ? &fBOs[in0 - 1] : NULL;
+ 		if (bo == NULL || !herogpu_bo_used(bo)) {

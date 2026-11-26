@@ -1,0 +1,71 @@
+--- a/bsd/dev/herolte_gpu.c
++++ b/bsd/dev/herolte_gpu.c
+@@ -37,6 +37,8 @@
+ bool herolte_gpu_map(uint64_t va, const uint64_t *pages, unsigned n);
+ void herolte_gpu_unmap(uint64_t va, unsigned n);
+ uint32_t herolte_gpu_submit(unsigned js, uint64_t jc, uint64_t *us);
++uint64_t herolte_gpu_fence(void);
++uint32_t herolte_gpu_wait_fence(uint64_t seq, uint64_t *us);
+ 
+ #define HG_PMU_PA       0x105c0000u
+ #define HG_PMU_G3D_CONF 0x4060u
+@@ -88,6 +90,8 @@
+  * herogpu_sleep_us=0 spins as before.
+  */
+ static uint32_t hg_sleep_us = 50;
++/* 0389: fence sequence, advanced after each client job completes. */
++static uint64_t hg_seq;
+ static bool hg_run_nap;         /* set by herolte_gpu_submit() and (0334) the present path: holding only hg_mtx */
+ static uint32_t hg_sleep_present = 1;   /* (0334) herogpu_sleep_present=0: the frame's scaling job spins as before */
+ 
+@@ -2254,6 +2258,9 @@
+ 		hg_job_va = HG_TEST_VA;
+ 		hg_affinity = 1;
+ 		status = ok ? 0 : (hg_last_js_status ? hg_last_js_status : ~0u);
++		if (ok) {
++			hg_seq++;
++		}
+ 		if (us) {
+ 			*us = hg_us_since(start);
+ 		}
+@@ -2262,6 +2269,40 @@
+ 	return status;
+ }
+ 
++/* 0389: read the completed-job sequence. */
++uint64_t
++herolte_gpu_fence(void)
++{
++	uint64_t seq;
++
++	lck_mtx_lock(hg_mtx);
++	seq = hg_seq;
++	lck_mtx_unlock(hg_mtx);
++	return seq;
++}
++
++/* 0389: wait until seq jobs have completed, asleep, bounded to 200 ms. */
++uint32_t
++herolte_gpu_wait_fence(uint64_t seq, uint64_t *us)
++{
++	uint64_t start = mach_absolute_time(), waited = 0;
++
++	if (hg_up_state != 1) {
++		return 1;
++	}
++	lck_mtx_lock(hg_mtx);
++	while (hg_seq < seq && waited < 200000) {
++		hg_usleep(50);
++		waited = hg_us_since(start);
++	}
++	uint64_t got = hg_seq;
++	lck_mtx_unlock(hg_mtx);
++	if (us) {
++		*us = waited;
++	}
++	return got >= seq ? 0 : 2;
++}
++
+ /* herogpu=7, step 2: all shader cores clear the whole panel, timed. */
+ static void
+ hg_all_cores_test(uint64_t hold)
