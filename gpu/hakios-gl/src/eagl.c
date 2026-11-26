@@ -350,7 +350,25 @@ static void *ca_context;                /* CoreAnimation's GLContext */
 static int sb_track;   /* 0376: glsbtrack=1 logs draws in the status-bar band */
 static int mua_red;   /* 0378: glmuared=1 colors the generic program red */
 static int cpu_sample;   /* 0379: glcpusample=1 samples IOSurface CPU memory */
+static int skip_blur;    /* 0383: glskipblur=1/2 skips the real draw of the blur chain */
+static int red_fn = -1;  /* 0383: glred_fn=N colors CoreAnimation's function N red */
+static int shader_dump;  /* 0383: glshaderdump=1 dumps the linked shaders */
 static int dumped_mua;
+
+/* 0383: true when this draw belongs to CoreAnimation's backdrop-blur chain. */
+static bool
+blur_skipped(void)
+{
+	unsigned fn = ca_context != NULL ? *(*(uint8_t **)((char *)ca_context + 0x10) + 0x10) : 90;
+
+	if (skip_blur == 1) {
+		return fn == 26 || fn == 32 || fn == 36 || fn == 40;
+	}
+	if (skip_blur == 2) {
+		return fn == 26 || fn == 32 || fn == 36 || fn == 40 || fn == 19;
+	}
+	return false;
+}
 static int check_errors = 1;            /* ask the library for an error after every call (the first frames) */
 static int share_surfaces = 1;          /* boot-arg glcopy=1: 0 */
 /*
@@ -3244,6 +3262,30 @@ plain_draw_begin(struct eagl *e, GLint enabled[4])
 		e->unclear = 0;
 	}
 	clear_now(e);
+	if (red_fn >= 0 && (int)function == red_fn) {
+		if (e->plain == 0) {
+			e->plain = plain_program(plain_fragment, "as they are");
+			e->plain_matrix = glGetUniformLocation(e->plain, "vertex_matrix");
+			e->plain_textured = glGetUniformLocation(e->plain, "textured");
+			e->plain_mua_red = glGetUniformLocation(e->plain, "mua_red");
+		}
+		glUseProgram(e->plain);
+		glUniformMatrix4fv(e->plain_matrix, 1, 0, e->matrix != NULL ? e->matrix : identity);
+		glUniform1f(e->plain_textured, 0.f);
+		if (e->plain_mua_red >= 0) {
+			glUniform1f(e->plain_mua_red, 1.f);
+		}
+		for (GLuint i = 0; i < 3; i++) {
+			GLint on = 0;
+
+			glGetVertexAttribiv(i, GL_VERTEX_ATTRIB_ARRAY_ENABLED, &on);
+			if (!on) {
+				glEnableVertexAttribArray(i);
+			}
+		}
+		census_draw(e, function, CENSUS_VIBRANT);
+		return 1;
+	}
 	if (e->program != 0) {
 		return false;
 	}
@@ -3611,6 +3653,10 @@ my_glDrawArrays(void *context, GLenum mode, GLint first, GLsizei count)
 	bool plain;
 
 	EAGL_ENTER(e, 0x210);
+	if (blur_skipped()) {
+		EAGL_LEAVE(e, 0x210);
+		return;                 /* 0383: salta davvero il draw di CA */
+	}
 	drawing(e);
 	count_spans(e, mode, count);
 	e->draws++;
@@ -3651,6 +3697,10 @@ my_glDrawElements(void *context, GLenum mode, GLsizei count, GLenum type, const 
 	bool plain;
 
 	EAGL_ENTER(e, 0x220);
+	if (blur_skipped()) {
+		EAGL_LEAVE(e, 0x220);
+		return;                 /* 0383: salta davvero il draw di CA */
+	}
 	drawing(e);
 	count_spans(e, mode, count);
 	e->draws++;
@@ -4315,6 +4365,21 @@ my_glLinkProgram(void *context, GLuint program)
 	glLinkProgram(program);
 	glGetProgramiv(program, GL_LINK_STATUS, &good);
 	e->programs++;
+	if (shader_dump) {
+		GLuint shaders[8] = { 0 };
+		GLint n = 0, k;
+
+		glGetAttachedShaders(program, 8, &n, shaders);
+		say("hakios-gl: === program %u: %d shaders ===\n", program, n);
+		for (k = 0; k < n; k++) {
+			const char *text = e->sources[shaders[k] % 256];
+
+			if (text != NULL) {
+				say("hakios-gl: --- shader %u ---\n", shaders[k]);
+				say_long("CA shader", text);
+			}
+		}
+	}
 	if (!good) {
 		glGetProgramInfoLog(program, sizeof(said), NULL, said);
 		say("hakios-gl: A PROGRAM DOES NOT LINK (program %u): %s\n", program, said);
@@ -4680,6 +4745,17 @@ install(void)
 		red_test = strstr(arguments, "glred=1") != NULL;
 		mua_red = strstr(arguments, "glmuared=1") != NULL;
 		cpu_sample = strstr(arguments, "glcpusample=1") != NULL;
+		{
+			const char *a;
+
+			if ((a = strstr(arguments, "glskipblur=")) != NULL) {
+				skip_blur = (int)strtoul(a + 11, NULL, 10);
+			}
+			if ((a = strstr(arguments, "glred_fn=")) != NULL) {
+				red_fn = (int)strtoul(a + 9, NULL, 10);
+			}
+			shader_dump = strstr(arguments, "glshaderdump=1") != NULL;
+		}
 		sb_track = strstr(arguments, "glsbtrack=1") != NULL;
 		if (sb_track) {
 			/* 0382: solo trace_place; trace_placing e' rimesso a 1 da
