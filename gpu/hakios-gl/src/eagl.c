@@ -356,6 +356,7 @@ static int shader_dump;  /* 0383: glshaderdump=1 dumps the linked shaders */
 static int zero_empty;   /* 0384: glzero_empty=1 zero-fills glTexImage2D(..., NULL) */
 static unsigned zeroed_count;
 static unsigned snap_frame;  /* 0385: glsnap=N dumps the display surface's top rows */
+static unsigned snaps_done;
 static int dumped_mua;
 
 /* 0383: true when this draw belongs to CoreAnimation's backdrop-blur chain. */
@@ -1330,9 +1331,13 @@ frame_end(struct eagl *e, bool finished)
 	}
 	/* 0385: one-shot snapshot of the surface that is sent to the display,
 	 * read on the CPU with IOSurfaceLock(RO): no glReadPixels, no GPU stall. */
-	if (snap_frame != 0 && e->frames >= snap_frame && (e->frames % snap_frame) == 0) {
+	if (snap_frame != 0 && e->frames >= snap_frame && snaps_done < 6 &&
+	    e->frames >= snap_frame + snaps_done * snap_frame) {
 		struct image *display = NULL;
 		char snap_path[128];
+
+		snaps_done++;
+		say("hakios-gl: 0385 SNAP TRY frame %u\n", e->frames);
 
 		for (unsigned i = 0; i < e->image_count; i++) {
 			struct image *im = &e->images[i];
@@ -1342,6 +1347,9 @@ frame_end(struct eagl *e, bool finished)
 			     (size_t)display->width * (size_t)display->height)) {
 				display = im;
 			}
+		}
+		if (display == NULL) {
+			say("hakios-gl: 0385 SNAP no display surface at frame %u\n", e->frames);
 		}
 		if (display != NULL && IOSurfaceLock(display->surface, kIOSurfaceLockReadOnly, NULL) == 0) {
 			const uint8_t *base = IOSurfaceGetBaseAddress(display->surface);
