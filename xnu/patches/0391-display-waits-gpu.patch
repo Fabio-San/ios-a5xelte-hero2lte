@@ -1,0 +1,12 @@
+--- a/iokit/Kernel/arm/SweetFramebuffer.cpp
++++ b/iokit/Kernel/arm/SweetFramebuffer.cpp
+@@ -362,6 +362,9 @@
+ 				t->release();
+ 			}
+ 			setProperty("IOMFBDisplayRefresh", refresh);
++			/* 0391: the display driver waits for GPU work before its flip,
++			 * so hakios-gl can skip glFinish() in frame_end(). */
++			setProperty("HakiosWaitsForGPU", kOSBooleanTrue);
+ 			refresh->release();
+ 		}
+ 		IOLog("HEROLTE FB: timer coalescing %s; CoreAnimation told %u Hz\n", mach_timer_coalescing_enabled ? "on" : "off",
