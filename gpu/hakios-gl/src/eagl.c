@@ -357,6 +357,7 @@ static int zero_empty;   /* 0384: glzero_empty=1 zero-fills glTexImage2D(..., NU
 static unsigned zeroed_count;
 static unsigned snap_frame;  /* 0385: glsnap=N dumps the display surface's top rows */
 static unsigned snaps_done;
+static int sb_clear;     /* 0387: glsbcbar=1 clears the status-bar band at frame start */
 static int dumped_mua;
 
 /* 0383: true when this draw belongs to CoreAnimation's backdrop-blur chain. */
@@ -1210,6 +1211,26 @@ frame_begin(struct eagl *e)
 	}
 	e->in_frame = true;
 	e->began = now_us();
+	/* 0387: clear the bottom 120 rows of the display picture (CoreAnimation's
+	 * status-bar band, y 71..85) so residue in FB2 cannot show through a
+	 * partial repaint. Off unless glsbcbar=1. */
+	if (sb_clear && e->framebuffer != 0 && e->colour != 0) {
+		struct image *target = image_of(e, e->colour);
+		GLint box[4] = { 0, 0, 0, 0 }, scissor[4] = { 0, 0, 0, 0 };
+		GLfloat colour[4] = { 0.f, 0.f, 0.f, 0.f };
+		GLboolean boxed = glIsEnabled(GL_SCISSOR_TEST);
+
+		if (target != NULL && target->target && target->width >= 750 && target->height >= 1334) {
+			glGetIntegerv(GL_VIEWPORT, box);
+			glGetIntegerv(GL_SCISSOR_BOX, scissor);
+			glEnable(GL_SCISSOR_TEST);
+			glScissor(box[0], box[1], box[2], box[3] < 120 ? box[3] : 120);
+			glClearColor(colour[0], colour[1], colour[2], colour[3]);
+			glClear(GL_COLOR_BUFFER_BIT);
+			(boxed ? glEnable : glDisable)(GL_SCISSOR_TEST);
+			glScissor(scissor[0], scissor[1], scissor[2], scissor[3]);
+		}
+	}
 	eagl_tracing = e->frames + 1 >= trace_first && e->frames + 1 <= trace_last;
 	if ((trace_at != 0 && e->began >= trace_at) || (trace_draws != 0 && e->last_draws >= trace_draws) || trace_function_met) {
 		trace_left = trace_frames;      /* (once) */
@@ -4826,6 +4847,7 @@ install(void)
 			}
 			shader_dump = strstr(arguments, "glshaderdump=1") != NULL;
 			zero_empty = strstr(arguments, "glzero_empty=1") != NULL;
+			sb_clear = strstr(arguments, "glsbcbar=1") != NULL;
 			{
 				const char *a = strstr(arguments, "glsnap=");
 
