@@ -795,8 +795,6 @@ bgra_to_deep(const uint8_t *in, IOSurfaceRef surface, GLsizei width, GLsizei hei
 	}
 }
 
-/* Fill a texture, which is bound, from its IOSurface, unless it is the surface. */
-static void
 /* 0379: campiona la memoria CPU di una IOSurface senza glReadPixels (no GPU stall). */
 static unsigned
 cpu_lit(const uint8_t *base, size_t row, unsigned w, unsigned h)
@@ -819,6 +817,8 @@ cpu_lit(const uint8_t *base, size_t row, unsigned w, unsigned h)
 	return lit;
 }
 
+/* Fill a texture, which is bound, from its IOSurface, unless it is the surface. */
+static void
 surface_to_texture(struct eagl *e, struct image *image)
 {
 	if (image->deep) {              /* (Galaxy S7 port) */
@@ -1213,7 +1213,7 @@ frame_begin(struct eagl *e)
 		struct image *image = &e->images[i];
 
 		if (cpu_sample && image->surface != NULL && !image->target && !image->shared &&
-		    (IOSurfaceGetWidth(image->surface) >= 300 || IOSurfaceGetArea(image->surface) >= 200000)) {
+		    (IOSurfaceGetWidth(image->surface) >= 300 || IOSurfaceGetWidth(image->surface) * IOSurfaceGetHeight(image->surface) >= 200000)) {
 			unsigned lit = 0, planes = IOSurfaceGetPlaneCount(image->surface);
 			const uint8_t *base = NULL;
 			size_t row = 0;
