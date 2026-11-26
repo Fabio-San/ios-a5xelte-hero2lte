@@ -1211,9 +1211,9 @@ frame_begin(struct eagl *e)
 	}
 	e->in_frame = true;
 	e->began = now_us();
-	/* 0387: clear the bottom 120 rows of the display picture (CoreAnimation's
-	 * status-bar band, y 71..85) so residue in FB2 cannot show through a
-	 * partial repaint. Off unless glsbcbar=1. */
+	/* 0387: clear the TOP 120 rows of the display picture: CoreAnimation's
+	 * status-bar draws are at y 1206..1295 of a 1334-tall framebuffer (the
+	 * y 71..85 of SB_DRAW is in the flipped vertex space). Off by default. */
 	if (sb_clear && e->framebuffer != 0 && e->colour != 0) {
 		struct image *target = image_of(e, e->colour);
 		GLint box[4] = { 0, 0, 0, 0 }, scissor[4] = { 0, 0, 0, 0 };
@@ -1224,7 +1224,8 @@ frame_begin(struct eagl *e)
 			glGetIntegerv(GL_VIEWPORT, box);
 			glGetIntegerv(GL_SCISSOR_BOX, scissor);
 			glEnable(GL_SCISSOR_TEST);
-			glScissor(box[0], box[1], box[2], box[3] < 120 ? box[3] : 120);
+			glScissor(box[0], box[1] + box[3] - (box[3] < 120 ? box[3] : 120), box[2],
+			    box[3] < 120 ? box[3] : 120);
 			glClearColor(colour[0], colour[1], colour[2], colour[3]);
 			glClear(GL_COLOR_BUFFER_BIT);
 			(boxed ? glEnable : glDisable)(GL_SCISSOR_TEST);
