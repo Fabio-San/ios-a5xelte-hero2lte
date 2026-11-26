@@ -353,6 +353,8 @@ static int cpu_sample;   /* 0379: glcpusample=1 samples IOSurface CPU memory */
 static int skip_blur;    /* 0383: glskipblur=1/2 skips the real draw of the blur chain */
 static int red_fn = -1;  /* 0383: glred_fn=N colors CoreAnimation's function N red */
 static int shader_dump;  /* 0383: glshaderdump=1 dumps the linked shaders */
+static int zero_empty;   /* 0384: glzero_empty=1 zero-fills glTexImage2D(..., NULL) */
+static unsigned zeroed_count;
 static int dumped_mua;
 
 /* 0383: true when this draw belongs to CoreAnimation's backdrop-blur chain. */
@@ -3896,7 +3898,26 @@ my_glTexImage2D(void *context, GLenum target, GLint level, GLint internal, GLsiz
 		group_forget(e, e->bound[e->unit]);
 	}
 	uint64_t began = slow_calls_us != 0 ? now_us() : 0;
-	glTexImage2D(target, level, (GLint)internal_format((GLenum)internal, format), width, height, border, format, type, pixels);
+	{
+		void *zeroed = NULL;
+		const void *data = pixels;
+
+		if (zero_empty && pixels == NULL && target == GL_TEXTURE_2D && level == 0 && width > 0 && height > 0 &&
+		    width <= 2048 && height <= 2048) {
+			size_t bpp = bytes_a_pixel((GLenum)format, (GLenum)type);
+			size_t bytes = (size_t)width * (size_t)height * bpp;
+
+			if (bytes > 0 && bytes <= (16u << 20) && (zeroed = calloc(1, bytes)) != NULL) {
+				data = zeroed;
+				if (zeroed_count++ < 12) {
+					say("hakios-gl: 0384 zeroed empty texture %dx%d format %#x type %#x (%zu bytes)\n",
+					    width, height, (unsigned)format, (unsigned)type, bytes);
+				}
+			}
+		}
+		glTexImage2D(target, level, (GLint)internal_format((GLenum)internal, format), width, height, border, format, type, data);
+		free(zeroed);
+	}
 	if (began != 0 && now_us() - began >= slow_calls_us) {
 		/* (with glslow=US: which pictures take long to hand over) */
 		say("tl: slow-tex %dx%d level %d format %#x type %#x%s %llu at %llu\n", width, height, level, format, type,
@@ -4755,6 +4776,7 @@ install(void)
 				red_fn = (int)strtoul(a + 9, NULL, 10);
 			}
 			shader_dump = strstr(arguments, "glshaderdump=1") != NULL;
+			zero_empty = strstr(arguments, "glzero_empty=1") != NULL;
 		}
 		sb_track = strstr(arguments, "glsbtrack=1") != NULL;
 		if (sb_track) {
