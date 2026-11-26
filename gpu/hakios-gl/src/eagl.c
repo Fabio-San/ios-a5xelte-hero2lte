@@ -358,6 +358,8 @@ static unsigned zeroed_count;
 static unsigned snap_frame;  /* 0385: glsnap=N dumps the display surface's top rows */
 static unsigned snaps_done;
 static int sb_clear;     /* 0387: glsbcbar=1 clears the status-bar band at frame start */
+static int preserve;     /* 0391: glpreserve=1 blits the previous frame as background */
+static GLuint keep_tex, keep_fbo;
 static int dumped_mua;
 
 /* 0383: true when this draw belongs to CoreAnimation's backdrop-blur chain. */
@@ -1211,6 +1213,33 @@ frame_begin(struct eagl *e)
 	}
 	e->in_frame = true;
 	e->began = now_us();
+	if (preserve && e->framebuffer != 0 && e->colour != 0) {
+		struct image *target = image_of(e, e->colour);
+
+		if (target != NULL && target->target && target->width == 750 && target->height == 1334) {
+			GLint read = 0, draw = 0;
+
+			if (keep_tex == 0) {
+				glGenTextures(1, &keep_tex);
+				glBindTexture(GL_TEXTURE_2D, keep_tex);
+				glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, 750, 1334, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
+				glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+				glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+				glGenFramebuffers(1, &keep_fbo);
+				glBindFramebuffer(GL_FRAMEBUFFER, keep_fbo);
+				glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, keep_tex, 0);
+				glClearColor(0.f, 0.f, 0.f, 0.f);
+				glClear(GL_COLOR_BUFFER_BIT);
+			}
+			glGetIntegerv(GL_READ_FRAMEBUFFER_BINDING, &read);
+			glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, &draw);
+			glBindFramebuffer(GL_READ_FRAMEBUFFER, keep_fbo);
+			glBindFramebuffer(GL_DRAW_FRAMEBUFFER, e->framebuffer);
+			glBlitFramebuffer(0, 0, 750, 1334, 0, 0, 750, 1334, GL_COLOR_BUFFER_BIT, GL_NEAREST);
+			glBindFramebuffer(GL_READ_FRAMEBUFFER, (GLuint)read);
+			glBindFramebuffer(GL_DRAW_FRAMEBUFFER, (GLuint)draw);
+		}
+	}
 	/* 0387: clear the TOP 120 rows of the display picture: CoreAnimation's
 	 * status-bar draws are at y 1206..1295 of a 1334-tall framebuffer (the
 	 * y 71..85 of SB_DRAW is in the flipped vertex space). Off by default. */
@@ -1302,6 +1331,19 @@ frame_end(struct eagl *e, bool finished)
 
 	clear_now(e);
 	before = now_us();
+	if (preserve && keep_fbo != 0 && e->framebuffer != 0 && e->colour != 0) {
+		struct image *target = image_of(e, e->colour);
+
+		if (target != NULL && target->target && target->width == 750 && target->height == 1334) {
+			GLint draw = 0;
+
+			glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, &draw);
+			glBindFramebuffer(GL_READ_FRAMEBUFFER, e->framebuffer);
+			glBindFramebuffer(GL_DRAW_FRAMEBUFFER, keep_fbo);
+			glBlitFramebuffer(0, 0, 750, 1334, 0, 0, 750, 1334, GL_COLOR_BUFFER_BIT, GL_NEAREST);
+			glBindFramebuffer(GL_DRAW_FRAMEBUFFER, (GLuint)draw);
+		}
+	}
 	for (unsigned i = 0; i < e->image_count; i++) {
 		if (e->images[i].target && e->images[i].drawn && e->images[i].mirror != 0) {
 			target_to_surface(e, &e->images[i]);    /* (the GPU's copy: before what follows sends it out) */
@@ -4849,6 +4891,7 @@ install(void)
 			shader_dump = strstr(arguments, "glshaderdump=1") != NULL;
 			zero_empty = strstr(arguments, "glzero_empty=1") != NULL;
 			sb_clear = strstr(arguments, "glsbcbar=1") != NULL;
+			preserve = strstr(arguments, "glpreserve=1") != NULL;
 			{
 				const char *a = strstr(arguments, "glsnap=");
 
