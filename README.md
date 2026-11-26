@@ -59,13 +59,12 @@ A full end-to-end guide is [docs/herolte-howto.md](docs/herolte-howto.md).
   No modem, Bluetooth, camera, sensors, sleep, Face ID or Siri voices.
 
 Log and diagnostic scripts: `tools/herolte-log-pull.py`, `tools/herolte-hfs-read.py`.
-Detailed investigation: `docs/PIANO_A_RETTANGOLI.md`, `docs/PROMPT_GEMINI_*.md`,
-`docs/PIANO_GPU_FB2.md`, `docs/PIANO_RISCRITTURA_GPU_DISPLAY.md`.
+Detailed investigation is tracked in [docs/REWRITE_ROADMAP.md](docs/REWRITE_ROADMAP.md).
 
 ## Roadmap — GPU / display rewrite
 
 The next work is the GPU/display pipeline, in three levels (full technical brief:
-[docs/PIANO_TECNICO_GEMINI.md](docs/PIANO_TECNICO_GEMINI.md)):
+[docs/REWRITE_ROADMAP.md](docs/REWRITE_ROADMAP.md)):
 
 1. **Level 1 (1-3 weeks)** — Job batching in `herolte_gpu.c` (one or two submits
    per frame instead of ~1600/s) and a kernel fence before the display flip, so

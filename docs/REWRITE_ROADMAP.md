@@ -1,0 +1,165 @@
+# GPU / Display Rewrite Roadmap (hero2lte, iOS 16.7.16)
+
+This document collects the remaining work on the Mali-T880 → DECON/VGR0 path.
+It replaces the scattered local notes: everything here is in this repository.
+
+## Hardware baseline
+
+- **CPU:** 4× Exynos M1 (Mongoose) + 4× Cortex-A53 (ARMv8.0, no LSE, not
+  I/O-coherent with GPU/DECON/UFS).
+- **GPU:** Mali-T880 MP12, Midgard, 12 cores, 16×16 tiles, OpenGL ES 3.2.
+  No native Metal.
+- **Display:** DECON-F with hardware VGR0 scaler (750×1334 → 1440×2560),
+  IDMA, s6e3hf4 panel.
+- **Storage:** UFS 2.0 at 0x155A0000, 4 KiB sectors, up to 32 tags.
+- **PMIC:** S2MPS16 on HSI2C15 (0x10550000).
+
+## Current status and known problem
+
+The phone boots to a usable Home screen with GPU, Wi-Fi, sound, touch and
+physical keys. One cosmetic defect remains: flashing/rectangular "analog TV"
+noise in the status-bar band, triggered when that band is repainted (Wi-Fi
+spinner, Safari page load, scrolling, Home page 3+), at the lock screen and
+before the Apple logo. The first two Home pages stay clean.
+
+Evidence collected so far (all negative, so the work below starts from facts):
+
+- CPU sampling of the IOSurfaces shows they contain data (seed stays 1).
+- Clearing the D-cache on every bind (`shared_picture_fresh`) does not help.
+- Forcing the CoreAnimation blur functions red colours the translucent
+  backgrounds (dock, search, Safari bottom bar), not the noise.
+- `glfetch=0`, `glzero_empty=1`, `herogpu_flush=0`, `glwait=0`,
+  `herofb2=0`, zeroing FB2, `glskipblur=2` and iOS 18 were all tested.
+- Android and LineageOS on the same panel are clean: the defect is in our
+  software, not the hardware.
+
+Gate before Level 1: a one-shot kernel snapshot of the 750×1334 source buffer
+(`herosnap=N`, XNU patch `0388`) tells whether the noise is already in the
+Mali-written frame or appears later in DECON/VGR0.
+
+## Level 1 — GPU → Display (1–3 weeks)
+
+### 1. Job batching and a kernel fence instead of `glFinish()`
+
+`frame_end()` in `gpu/hakios-gl/src/eagl.c` currently calls `glFinish()`,
+blocking the CPU ~4 ms/frame, and an animation produces ~1600 synchronous
+submit ioctls/s (~0.5 ms each including syscall, lock and cache flush).
+
+Midgard has three job slots (JS0 fragment, JS1 vertex/tiler, JS2 compute) with
+HEAD/HEAD_NEXT/COMMAND_NEXT registers and a `next_job` pointer in each job
+descriptor. Rewrite `herolte_gpu.c` to accept a batch of descriptors per frame
+(in the style of `panfrost_ioctl_submit`), chain JS1 → JS0 inside the kernel,
+and return a `fence_seqno`. Then:
+
+1. Have `SweetFramebuffer.cpp` wait for that fence before the display flip
+   (`PINGPONG_UPDATE` / VGR0 base address update).
+2. **Only then** publish `HakiosWaitsForGPU = true` on the IOMobileFramebuffer
+   registry entry: `display_waits()` in `eagl.c` then returns true and
+   `wait_for_frames` goes to 0 without any boot argument.
+3. Use `SHADER_PRESENT_LO = 0xff0f` only with a 5–10 ms power-off hysteresis;
+   otherwise power-cycling 12 cores hundreds of times per second costs more
+   than it saves on small UI quads.
+
+Expected: ~4 ms/frame back to the CPU, one or two submits per frame.
+
+### 2. Zero-copy swapchain on VGR0
+
+`target_to_surface()` copies the whole 750×1334 frame (~4 MB, up to 240 MB/s,
+1–16 ms spikes) into the display surface before VGR0 reads it again.
+
+Allocate 2–3 physical buffers of ~4 MiB each (750×1334×4) and expose them to
+`eagl.c` as the direct backing of backboardd's renderbuffers via SyncBO /
+IOSurface. `frame_end()` then sends only fence + slot index to `SwapEnd`.
+
+Partial damage is mandatory: CoreAnimation does not repaint every region each
+frame (the `glsbcbar=1` black hole proved it). Either expose
+`EGL_EXT_buffer_age`, force full-frame drawing (only ~1 M pixels on 12 cores
+with VGR0), or blit the non-damaged tiles from buffer k-1 into k.
+
+With VGR0 doing the scaling, 900×1600 or 1080×1920 sources become affordable.
+
+### 3. Clean IOSurface transport
+
+Today the seed is almost always 1, `WrapClientImage` (selector 6) is refused,
+and `surface_changed()` samples one eighth of the rows per frame and skips
+surfaces with planes > 0.
+
+- In `IOSurfaceUnlock` (trap 3) increment the seed in the mapping shared with
+  userland whenever `!(options & kIOSurfaceLockReadOnly)`.
+- Implement selector 6 in `SweetSurface.cpp` on the model of selector 7, and
+  always populate `planes[0]` (width, height, bytesPerRow, offset) so the
+  `0 planes` case in `-texImageIOSurface:` disappears.
+- Replace blind cache flushes with dirty-range maintenance (`dc cvac`, `dsb sy`).
+
+## Level 2 — Exynos 8890 subsystems (3–8 weeks)
+
+### 4. Heterogeneous scheduler, DVFS and TMU
+
+- Model two clusters in `osfmk/kern/sched_*.c`: P = CPU 4..7 (Mongoose),
+  E = CPU 0..3 (Cortex-A53).
+- Keep backboardd, SpringBoard, mediaserverd (real-time audio), the UIKit /
+  WebContent main thread and the touch thread on Mongoose; confine
+  mobileassetd, installd, indexing and downloads to A53.
+- Touch boost: raise the Mongoose frequency floor for 100–150 ms on the
+  sec_ts/GPA1-0 interrupt.
+- DVFS beyond vdd_mngs (BUCK2) and vdd_g3d (BUCK6): also govern MIF (LPDDR4 up
+  to 1794 MHz, BUCK1/CMU_MIF) and INT (BUCK4/CMU_CCORE), because Mali and
+  DECON both depend on memory bandwidth. Single lock on HSI2C15: raise voltage
+  then `udelay(50-100 µs)` then PLL; on the way down reverse the order.
+- TMU sensors for MNGS/APOLLO/G3D from the DTB, polled every 250 ms, with
+  progressive step-down above 75–85 °C instead of abrupt throttling.
+
+### 5. UFS 2.0 multi-queue
+
+Use the 32 UTRD slots of UTRLDBR, interrupt-driven completion (IS.UTRCS on the
+GIC) and a bitmask of in-flight tags so IOBlockStorageDriver can issue up to
+32 concurrent requests. Build the PRDT directly from the physical pages of the
+IOMemoryDescriptor (4 KiB sectors are already page-aligned): no bounce buffer.
+This targets app launch, dyld_shared_cache reads and VM compressor paging.
+
+### 6. Real display sleep
+
+Stop SwapEnd/VGR0/GPU, send DCS `0x28` (display off) then `0x10` (sleep in)
+with ~120 ms wait, put DSI into ULPS, clock-gate DECON/DSIM/G3D, switch off
+LDO32/LDO33 (sec_ts), BUCK6 and S2MPB02 LDO16, then WFI/power-collapse the
+clusters, waking on GPA0-5 (Home) / GPA2-4 (Power). Wake reverses the sequence:
+`0x11` SLPOUT, re-init sec_ts, `0x29` display on, SwapEnd.
+
+### 7. Recover physical RAM and tune the VM compressor
+
+Audit `/reserved-memory` in the live DTB: return unused carveouts (CP shared
+memory if the modem is off, camera ISP, secure media heaps) while never
+touching el3_mon/TZ, 0xE2A00000 (S-Boot framebuffer), 0x91000000 (FB2/VGR0)
+or ramoops. Target ~3.6–3.7 GiB usable instead of ~3.3 GiB. Tune WKdm/LZ4
+thresholds so WebContent/SpringBoard large allocations do not stall
+`vm_pageout`.
+
+## Level 3 — Native Metal (2–4+ months)
+
+Replace the legacy GLES bridge entirely: implement an MTLDevice /
+MTLCommandQueue / MTLCommandBuffer / MTLRenderCommandEncoder /
+MTLComputeCommandEncoder / MTLBuffer / MTLTexture shim backed by zero-copy
+IOSurfaces/SyncBO, plus the QuartzCore SPIs (`[[color(0)]]`, presentDrawable:
+into the VGR0 swapchain).
+
+Compile Apple AIR (LLVM bitcode with `air.*` intrinsics) into Mesa NIR, then
+use the existing `midgard_compile_shader_nir()` in
+`mesa/src/panfrost/midgard/`. Midgard differs from Bifrost (VLIW vec4, rigid
+sampler/UBO slots, no true bindless), so Metal 2 argument buffers need a
+flattening pass in NIR. Framebuffer fetch maps to `LD_TILE` /
+`nir_intrinsic_load_output`, which structurally removes the GLES
+`gl_LastFragData` workarounds and opens the way to iOS 26 where the GLES path
+no longer exists.
+
+Start with a single CAMetalLayer triangle, then move QuartzCore to native Metal.
+
+## Execution order
+
+1. Close the `herosnap` gate.
+2. Level 1: job batching + kernel fence, then clean IOSurface seed/wrap, then
+   zero-copy swapchain.
+3. Level 2: UFS multi-queue, scheduler/DVFS/TMU, real display sleep, RAM.
+4. Level 3: AIR → NIR → Midgard prototype.
+
+Every step must keep the boot stable, Wi-Fi and touch working, and must be
+measured against `tools/herolte-log-pull.py` frame counters before and after.
