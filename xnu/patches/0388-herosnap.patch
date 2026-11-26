@@ -5,7 +5,7 @@
  extern "C" bool herolte_fb_two_buffers(void);
  extern "C" void herolte_fb_primary(void);
 +
-+/* 0388: boot-arg herosnap=N dumps 32 rows of the presented buffer at vsync N. */
++/* 0388: herosnap=N dumps rows 64..126 (the status-bar band) at vsync N. */
 +static uint32_t hero_snap_at;
  extern "C" volatile uint64_t herolte_screen_off_at;    /* bsd/dev/herolte_gpu.c (0330) */
  extern "C" boolean_t mach_timer_coalescing_enabled;    /* osfmk/kern/timer_call.c, sysctl kern.timer_coalescing_enabled */
@@ -18,7 +18,7 @@
  	fPerfLog = perf != 0;
  	fPerfFrames = fPerfBytes = fPerfNS = fPerfMaxNS = 0;
  	fPerfWindowStart = mach_absolute_time();
-@@ -520,6 +524,23 @@
+@@ -520,6 +524,24 @@
  		    (IOMobileFramebufferUserClient *)fb->fClients->getObject(i);
  		client->notify(SWEET_FB_NOTIFY_VSYNC, values, 6);
  	}
@@ -27,7 +27,8 @@
 +		IOLog("HERO SNAP: frame %llu %ux%u row %u pixels at %p\n", (unsigned long long)count,
 +		    fb->fWidth, fb->fHeight, fb->fRowBytes, (void *)fb->fPixels);
 +		for (uint32_t y = 0; y < 32; y++) {
-+			const uint32_t *line = (const uint32_t *)(fb->fPixels + (uint64_t)(y * 2) * fb->fRowBytes);
++			uint32_t row_y = 64 + y * 2;
++			const uint32_t *line = (const uint32_t *)(fb->fPixels + (uint64_t)row_y * fb->fRowBytes);
 +			char buf[64], *at = buf;
 +
 +			for (uint32_t x = fb->fWidth > 64 ? fb->fWidth - 64 : 0; x < fb->fWidth; x++) {
@@ -36,7 +37,7 @@
 +					break;
 +				}
 +			}
-+			IOLog("HERO SNAP row %u:%s\n", y * 2, buf);
++			IOLog("HERO SNAP row %u:%s\n", row_y, buf);
 +		}
 +	}
  	if (fb->fPowerOff) {
