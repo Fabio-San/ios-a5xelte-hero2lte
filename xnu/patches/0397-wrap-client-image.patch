@@ -1,6 +1,14 @@
 --- a/iokit/Kernel/arm/SweetSurface.cpp
 +++ b/iokit/Kernel/arm/SweetSurface.cpp
-@@ -923,6 +923,67 @@
+@@ -877,6 +877,7 @@
+ #endif
+ {
+ 	uint64_t arg0 = args->scalarInputCount > 0 ? args->scalarInput[0] : 0;
++	IOReturn ret = kIOReturnSuccess;   /* 0397: used by WrapClientImage */
+ 
+ 	switch (selector) {
+ 	case kSweetSurfaceLimits: {
+@@ -923,6 +924,67 @@
  		return kIOReturnSuccess;
  	}
  	case 6:         /* wrap client image: struct in 0x20 */
