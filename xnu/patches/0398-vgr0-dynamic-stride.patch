@@ -1,0 +1,51 @@
+--- a/bsd/dev/herolte_gpu.c
++++ b/bsd/dev/herolte_gpu.c
+@@ -1827,7 +1827,11 @@
+  * and entered again on a later GPU frame, at most once a second. An IDMA read error or a flip not taken: G1 for good.
+  * Boot-arg herovgr=0: never.
+  */
+-#define HVG_STRIDE_PX   768u
++/* 0398: derive the VGR0 source stride from the frame width. The old fixed
++ * 768 px (3072 B) was a 750x1334 leftover: with a 720-wide surface VGR0
++ * read 48 bytes past each row, left VGR0 and fell back to the CPU copy. */
++#define HVG_STRIDE_MAX  768u
++static inline uint32_t hvg_stride_px(uint32_t w) { return (w + 15u) & ~15u; }
+ #define HVG_VGR0_PA     0x13e03000u
+ #define HVG_MMU1_PA     0x13e30000u
+ static void hg_vgr0_program(vm_offset_t vg, uint32_t pa, uint32_t sw, uint32_t sh, uint32_t stride_px, uint32_t dw, uint32_t dh);
+@@ -1840,7 +1844,7 @@
+ static bool
+ hvg_wanted(uint32_t w, uint32_t h)
+ {
+-	if (hvg_state != 0 || hfb_state != 1 || w > HVG_STRIDE_PX || h > HG_PANEL_H || w < 64 || h < 64) {
++	if (hvg_state != 0 || hfb_state != 1 || w > HVG_STRIDE_MAX || h > HG_PANEL_H || w < 64 || h < 64) {
+ 		return false;
+ 	}
+ 	if (hvg_left_at && mach_absolute_time() - hvg_left_at < 26000000u) {      /* 1 s at 26 MHz */
+@@ -1904,7 +1908,7 @@
+ 	return false;
+ }
+ 
+-/* The frame just drawn at pa (w x h, HVG_STRIDE_PX a row) goes on screen through VGR0. */
++/* The frame just drawn at pa (w x h, hvg_stride_px(w) a row) goes on screen through VGR0. */
+ static void
+ hvg_enter(uint64_t pa, uint32_t w, uint32_t h)
+ {
+@@ -1917,7 +1921,7 @@
+ 	if (hg_rd(hvg_mmu, 0x0) != 0) {
+ 		hg_wr(hvg_mmu, 0x0, 0);                                 /* SysMMU bypass: VGR0 reads physical addresses */
+ 	}
+-	hg_vgr0_program(hvg_vgr, (uint32_t)pa, w, h, HVG_STRIDE_PX, HG_PANEL_W, HG_PANEL_H);
++	hg_vgr0_program(hvg_vgr, (uint32_t)pa, w, h, hvg_stride_px(w), HG_PANEL_W, HG_PANEL_H);
+ 	hg_wr(hvg_vgr, 0x04, hg_rd(hvg_vgr, 0x04) | (1u << 19));       /* no stale read error */
+ 	hg_wr(hvg_decon, 0x130, (wc & ~(7u << 12)) | (5u << 12));
+ 	bool updated = hvg_window_update();
+@@ -1991,7 +1995,7 @@
+ 	hg_wr32(scr, S_VIEWPORT + 28, ((rh - 1) << 16) | (rw - 1));
+ 	hg_wr32(scr, S_FBD + 32, ((rh - 1) << 16) | (rw - 1));
+ 	hg_wr32(scr, S_FBD + 40, ((rh - 1) << 16) | (rw - 1));
+-	hg_wr32(scr, S_FBD + 128 + 40, small ? HVG_STRIDE_PX * 4 : HG_FB_STRIDE);
++	hg_wr32(scr, S_FBD + 128 + 40, small ? hvg_stride_px(w) * 4 : HG_FB_STRIDE);
+ 	hg_wr32(scr, S_FRAG_JOB + 36, (((rh + 15) / 16 - 1) << 16) | ((rw + 15) / 16 - 1));
+ 	uint32_t x0 = 0, x1 = HG_PANEL_W, y0 = 0, y1 = HG_PANEL_H;
+ 	if (small) {
