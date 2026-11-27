@@ -360,6 +360,8 @@ static unsigned snap_frame;  /* 0385: glsnap=N dumps the display surface's top r
 static unsigned snaps_done;
 static int sb_clear;     /* 0387: glsbcbar=1 clears the status-bar band at frame start */
 static int perimage_preserve;   /* 0396: glkeep=1 preserves each target image's frame */
+static void image_preserve_begin(struct eagl *e, struct image *im);
+static void image_preserve_end(struct eagl *e, struct image *im);
 static int dumped_mua;
 
 /* 0383: true when this draw belongs to CoreAnimation's backdrop-blur chain. */
