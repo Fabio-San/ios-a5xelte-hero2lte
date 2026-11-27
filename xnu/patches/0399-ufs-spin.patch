@@ -1,0 +1,74 @@
+--- a/bsd/dev/herolte_ufs.c
++++ b/bsd/dev/herolte_ufs.c
+@@ -75,6 +75,12 @@
+ #define CMD_SPIN_NS     (50ull * NSEC_PER_USEC)
+ #define CMD_SLEEP_NS    (200ull * NSEC_PER_USEC)
+ 
++/* 0399: heroufspin=N microseconds of busy-wait before sleeping on a 4 KiB
++ * command. UFS HCI has no wakeup for su.wait here, so each sleep costs up
++ * to 200 us even when the device finished in 40-80 us. */
++static uint32_t ufs_spin_us = 80;
++static uint64_t ufs_n_cmds, ufs_n_sleeps, ufs_sleep_ticks, ufs_log_at;
++
+ struct utrd {
+ 	uint32_t dw0, dw1, dw2, dw3;
+ 	uint32_t ucdba, ucdbau;
+@@ -212,10 +218,13 @@
+ 	    !ml_at_interrupt_context() && get_preemption_level() == 0;
+ 	uint64_t spin_until = 0, sleep_interval = 0;
+ 	if (sleepable) {
+-		nanoseconds_to_absolutetime(CMD_SPIN_NS, &spin_until);
++		uint64_t spin_ns = (uint64_t)ufs_spin_us * NSEC_PER_USEC;
++
++		nanoseconds_to_absolutetime(spin_ns, &spin_until);
+ 		spin_until += mach_absolute_time();
+ 		nanoseconds_to_absolutetime(CMD_SLEEP_NS, &sleep_interval);
+ 	}
++	ufs_n_cmds++;
+ 	while (ufs_rd(REG_UTRLDBR) & 1) {
+ 		uint64_t now = mach_absolute_time();
+ 		if (now > deadline) {
+@@ -226,15 +235,34 @@
+ 		if (sleepable && now >= spin_until) {
+ 			uint64_t wake = now + MIN(sleep_interval, deadline - now);
+ 			/* Keep the mutex: slot 0 and the bounce buffer are still owned. */
++			uint64_t slept = mach_absolute_time();
++
+ 			if (assert_wait_deadline_with_leeway((event_t)&su.wait, THREAD_UNINT,
+ 			    TIMEOUT_URGENCY_SYS_CRITICAL, wake, 0) == THREAD_WAITING) {
+ 				thread_block(THREAD_CONTINUE_NULL);
+ 			}
++			ufs_sleep_ticks += mach_absolute_time() - slept;
++			ufs_n_sleeps++;
+ 		} else {
+ 			delay(1);
+ 		}
+ 	}
+ 	__builtin_arm_dsb(0xf);
++	{
++		uint64_t now = mach_absolute_time(), ns = 0;
++
++		absolutetime_to_nanoseconds(now - ufs_log_at, &ns);
++		if (ufs_log_at == 0 || ns > 5ull * NSEC_PER_SEC) {
++			uint64_t slept_ns = 0;
++
++			ufs_log_at = now;
++			absolutetime_to_nanoseconds(ufs_sleep_ticks, &slept_ns);
++			printf("HEROLTE UFS PROFILE: %llu cmds, %llu sleeps, %llu ms asleep, spin %u us\n",
++			    (unsigned long long)ufs_n_cmds, (unsigned long long)ufs_n_sleeps,
++			    (unsigned long long)(slept_ns / NSEC_PER_MSEC), ufs_spin_us);
++			ufs_n_cmds = ufs_n_sleeps = ufs_sleep_ticks = 0;
++		}
++	}
+ 	ufs_wr(REG_IS, ufs_rd(REG_IS));         /* acknowledge completion status */
+ 
+ 	dma_sync(DMA_UTRL, sizeof(*utrd));
+@@ -765,6 +793,8 @@
+ 	PE_parse_boot_argn("ufswait", &wait, sizeof(wait));
+ 	su.cache = (cache == 1);
+ 	su.wait = (wait == 1);
++	PE_parse_boot_argn("heroufspin", &ufs_spin_us, sizeof(ufs_spin_us));
++	if (ufs_spin_us > 1000) ufs_spin_us = 1000;
+ 
+ 	su.regs = ml_io_map(reg[0], MAX(reg[1], (uintptr_t)HEROLTE_UFS_MAP));
+ 	if (kmem_alloc_contig(kernel_map, &su.dma, DMA_SIZE, PAGE_MASK, 0, 0,
