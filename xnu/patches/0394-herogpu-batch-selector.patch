@@ -1,0 +1,43 @@
+--- a/iokit/Kernel/arm/HeroGPU.cpp
++++ b/iokit/Kernel/arm/HeroGPU.cpp
+@@ -36,6 +36,7 @@
+ #include <IOKit/IOBufferMemoryDescriptor.h>
+ #include <kern/thread.h>
+ #include <pexpert/pexpert.h>
++#include <string.h>
+ #include <sys/proc.h>
+ #include "SweetSurface.h"
+ 
+@@ -48,6 +49,7 @@
+ uint32_t herolte_gpu_submit(unsigned js, uint64_t jc, uint64_t *us);
+ uint64_t herolte_gpu_fence(void);
+ uint32_t herolte_gpu_wait_fence(uint64_t seq, uint64_t *us);
++uint32_t herolte_gpu_submit_batch(const void *items, uint32_t count, void *out);
+ }
+ 
+ enum {
+@@ -61,6 +63,7 @@
+ 	kHeroGPUSyncBO   = 7,
+ 	kHeroGPUFence    = 8,
+ 	kHeroGPUWaitFence = 9,
++	kHeroGPUSubmitBatch = 10,
+ };
+ 
+ #define HEROGPU_MAX_BOS         4096
+@@ -465,6 +468,16 @@
+ 		out[0] = herolte_gpu_wait_fence(in0, &out[1]);
+ 		outCount = 2;
+ 		break;
++	case kHeroGPUSubmitBatch: {
++		uint64_t out[4] = { 0, 0, 0, ~0ull };
++
++		ret = herolte_gpu_submit_batch(args->structureInput,
++		    (uint32_t)(args->structureInputSize / 16), out);
++		if (args->structureOutput != NULL && args->structureOutputSize >= sizeof(out)) {
++			memcpy(args->structureOutput, out, sizeof(out));
++		}
++		break;
++	}
+ 	case kHeroGPUSyncBO: {
+ 		struct herogpu_bo *bo = in0 && in0 <= HEROGPU_MAX_BOS ? &fBOs[in0 - 1] : NULL;
+ 		if (bo == NULL || !herogpu_bo_used(bo)) {

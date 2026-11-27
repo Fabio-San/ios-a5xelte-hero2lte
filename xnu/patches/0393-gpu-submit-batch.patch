@@ -1,0 +1,82 @@
+--- a/bsd/dev/herolte_gpu.c
++++ b/bsd/dev/herolte_gpu.c
+@@ -39,6 +39,7 @@
+ uint32_t herolte_gpu_submit(unsigned js, uint64_t jc, uint64_t *us);
+ uint64_t herolte_gpu_fence(void);
+ uint32_t herolte_gpu_wait_fence(uint64_t seq, uint64_t *us);
++uint32_t herolte_gpu_submit_batch(const void *items, uint32_t count, void *out);
+ 
+ #define HG_PMU_PA       0x105c0000u
+ #define HG_PMU_G3D_CONF 0x4060u
+@@ -2303,6 +2304,71 @@
+ 	return got >= seq ? 0 : 2;
+ }
+ 
++/*
++ * 0393: submit up to 8 job chains in strict FIFO order under one lock.
++ * Each job is still started and waited for by hg_run() (the hardware
++ * dependencies between JS1 and JS0 are unchanged); this removes the
++ * per-job ioctl, lock and syscall overhead and lets the caller report one
++ * fence for the whole batch. Never mix clients: the caller passes items
++ * from a single HeroGPU user client.
++ */
++uint32_t
++herolte_gpu_submit_batch(const void *items, uint32_t count, void *outbuf)
++{
++	const uint8_t *p = (const uint8_t *)items;
++	uint64_t *out = (uint64_t *)outbuf;   /* fence, gpu_us, completed, error */
++	uint32_t done = 0, error = 0;
++
++	if (count == 0 || count > 8 || items == NULL || outbuf == NULL) {
++		return 1;
++	}
++	if (hg_up_state != 1) {
++		out[0] = herolte_gpu_fence();
++		out[1] = 0;
++		out[2] = 0;
++		out[3] = ~0ull;
++		return 1;
++	}
++	lck_mtx_lock(hg_mtx);
++	out[0] = hg_seq;
++	out[1] = 0;
++	for (uint32_t i = 0; i < count; i++) {
++		uint64_t jc;
++		uint32_t js, flags;
++		uint64_t start = mach_absolute_time();
++		bool ok;
++
++		memcpy(&jc, p + i * 16, sizeof(jc));
++		memcpy(&js, p + i * 16 + 8, sizeof(js));
++		memcpy(&flags, p + i * 16 + 12, sizeof(flags));
++		if (js > 1 || jc == 0 || flags != 0) {
++			error = ~0u;
++			break;
++		}
++		hg_job_va = jc;
++		hg_job_cpu = 0;
++		hg_run_quiet = true;
++		hg_run_nap = true;
++		ok = hg_run(js, "HEROGPU batch job");
++		hg_run_nap = false;
++		hg_run_quiet = false;
++		out[1] += hg_us_since(start);
++		if (!ok) {
++			error = hg_last_js_status ? hg_last_js_status : ~0u;
++			break;
++		}
++		hg_seq++;
++		done++;
++	}
++	hg_job_va = HG_TEST_VA;
++	hg_affinity = 1;
++	out[0] = hg_seq;
++	out[2] = done;
++	out[3] = error;
++	lck_mtx_unlock(hg_mtx);
++	return error == 0 ? 0 : 1;
++}
++
+ /* herogpu=7, step 2: all shader cores clear the whole panel, timed. */
+ static void
+ hg_all_cores_test(uint64_t hold)
