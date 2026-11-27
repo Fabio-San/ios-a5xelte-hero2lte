@@ -8,7 +8,7 @@
  
  #define HG_PMU_PA       0x105c0000u
  #define HG_PMU_G3D_CONF 0x4060u
-@@ -2303,6 +2304,71 @@
+@@ -2303,6 +2304,65 @@
  	return got >= seq ? 0 : 2;
  }
  
@@ -37,14 +37,18 @@
 +		out[3] = ~0ull;
 +		return 1;
 +	}
-+	lck_mtx_lock(hg_mtx);
-+	out[0] = hg_seq;
++	/*
++	 * Do NOT hold hg_mtx across the whole batch: PRESENT needs it between
++	 * jobs to make the vsync. herolte_gpu_submit() takes and releases the
++	 * lock itself, so each item can be interleaved with the display path.
++	 * We still save the per-job ioctl and structure round trips.
++	 */
++	out[0] = herolte_gpu_fence();
 +	out[1] = 0;
 +	for (uint32_t i = 0; i < count; i++) {
-+		uint64_t jc;
++		uint64_t jc, us = 0;
 +		uint32_t js, flags;
-+		uint64_t start = mach_absolute_time();
-+		bool ok;
++		uint32_t st;
 +
 +		memcpy(&jc, p + i * 16, sizeof(jc));
 +		memcpy(&js, p + i * 16 + 8, sizeof(js));
@@ -53,27 +57,17 @@
 +			error = ~0u;
 +			break;
 +		}
-+		hg_job_va = jc;
-+		hg_job_cpu = 0;
-+		hg_run_quiet = true;
-+		hg_run_nap = true;
-+		ok = hg_run(js, "HEROGPU batch job");
-+		hg_run_nap = false;
-+		hg_run_quiet = false;
-+		out[1] += hg_us_since(start);
-+		if (!ok) {
-+			error = hg_last_js_status ? hg_last_js_status : ~0u;
++		st = herolte_gpu_submit(js, jc, &us);
++		out[1] += us;
++		if (st != 0) {
++			error = st;
 +			break;
 +		}
-+		hg_seq++;
 +		done++;
 +	}
-+	hg_job_va = HG_TEST_VA;
-+	hg_affinity = 1;
-+	out[0] = hg_seq;
++	out[0] = herolte_gpu_fence();
 +	out[2] = done;
 +	out[3] = error;
-+	lck_mtx_unlock(hg_mtx);
 +	return error == 0 ? 0 : 1;
 +}
 +
