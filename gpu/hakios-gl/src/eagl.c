@@ -230,6 +230,7 @@ struct image {
 	bool invert, drawn;
 	bool shared;                    /* the texture is the surface's memory: nothing to copy */
 	GLuint mirror;                  /* a texture that is the surface's memory, which the GPU copies the frame into (blit_targets) */
+	GLuint keep_tex, keep_fbo;      /* 0396: this image's previous complete frame, for partial updates */
 	bool wrapped;                   /* the surface is memory of somebody's with a surface made around it */
 	bool alpha_first;               /* its pixels are opacity, blue, green, red in memory: see my_attachImage() */
 	bool deep;                      /* (Galaxy S7 port) a 'b3a8' surface drawn into: see deep_to_bgra() */
@@ -358,6 +359,7 @@ static unsigned zeroed_count;
 static unsigned snap_frame;  /* 0385: glsnap=N dumps the display surface's top rows */
 static unsigned snaps_done;
 static int sb_clear;     /* 0387: glsbcbar=1 clears the status-bar band at frame start */
+static int perimage_preserve;   /* 0396: glkeep=1 preserves each target image's frame */
 static int dumped_mua;
 
 /* 0383: true when this draw belongs to CoreAnimation's backdrop-blur chain. */
@@ -976,6 +978,7 @@ target_to_surface(struct eagl *e, struct image *image)
 	uint8_t *base;
 
 	image->drawn = false;
+	image_preserve_end(e, image);
 	if (image->mirror != 0) {
 		GLint read = 0, draw = 0;
 
@@ -4225,6 +4228,55 @@ my_glBindFramebuffer(void *context, GLenum target, GLuint framebuffer)
 	EAGL_LEAVE(e, 0x1508);
 }
 
+/* 0396: restore this image's previous frame before CoreAnimation draws a new one
+ * into it. CA only repaints the damaged rects, so the untouched pixels must
+ * come from the frame before — one kept texture PER image (the two display
+ * surfaces rotate, a single kept texture was the glpreserve bug). */
+static void
+image_preserve_begin(struct eagl *e, struct image *im)
+{
+	GLint read = 0, draw = 0;
+
+	if (!perimage_preserve || im == NULL || !im->target || im->width < 750 || im->height < 1334) {
+		return;
+	}
+	if (im->keep_tex == 0) {
+		glGenTextures(1, &im->keep_tex);
+		glBindTexture(GL_TEXTURE_2D, im->keep_tex);
+		glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, im->width, im->height, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
+		glTexParameteri(GL_TEXTURE_2D, 0x2801, GL_NEAREST);
+		glTexParameteri(GL_TEXTURE_2D, 0x2800, GL_NEAREST);
+		glGenFramebuffers(1, &im->keep_fbo);
+		glBindFramebuffer(GL_FRAMEBUFFER, im->keep_fbo);
+		glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, im->keep_tex, 0);
+		glClearColor(0.f, 0.f, 0.f, 0.f);
+		glClear(GL_COLOR_BUFFER_BIT);
+	}
+	glGetIntegerv(GL_READ_FRAMEBUFFER_BINDING, &read);
+	glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, &draw);
+	glBindFramebuffer(GL_READ_FRAMEBUFFER, im->keep_fbo);
+	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, e->framebuffer);
+	glBlitFramebuffer(0, 0, im->width, im->height, 0, 0, im->width, im->height, GL_COLOR_BUFFER_BIT, GL_NEAREST);
+	glBindFramebuffer(GL_READ_FRAMEBUFFER, (GLuint)read);
+	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, (GLuint)draw);
+}
+
+/* 0396: save the completed frame back into this image's kept texture. */
+static void
+image_preserve_end(struct eagl *e, struct image *im)
+{
+	GLint draw = 0;
+
+	if (!perimage_preserve || im == NULL || im->keep_fbo == 0 || im->width < 750 || im->height < 1334) {
+		return;
+	}
+	glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, &draw);
+	glBindFramebuffer(GL_READ_FRAMEBUFFER, e->framebuffer);
+	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, im->keep_fbo);
+	glBlitFramebuffer(0, 0, im->width, im->height, 0, 0, im->width, im->height, GL_COLOR_BUFFER_BIT, GL_NEAREST);
+	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, (GLuint)draw);
+}
+
 static void
 my_glFramebufferTexture2D(void *context, GLenum target, GLenum attachment, GLenum to, GLuint texture, GLint level)
 {
@@ -4234,6 +4286,7 @@ my_glFramebufferTexture2D(void *context, GLenum target, GLenum attachment, GLenu
 	clear_now(e);
 	if (attachment == GL_COLOR_ATTACHMENT0 && target != GL_READ_FRAMEBUFFER) {
 		e->colour = texture;
+		image_preserve_begin(e, image_of(e, texture));
 	}
 	if (eagl_tracing) {
 		eagl_trace("glFramebufferTexture2D(%#x, %#x, %#x, %u, %d)\n", target, attachment, to, texture, level);
@@ -4857,6 +4910,7 @@ install(void)
 			shader_dump = strstr(arguments, "glshaderdump=1") != NULL;
 			zero_empty = strstr(arguments, "glzero_empty=1") != NULL;
 			sb_clear = strstr(arguments, "glsbcbar=1") != NULL;
+			perimage_preserve = strstr(arguments, "glkeep=1") != NULL;
 			{
 				const char *a = strstr(arguments, "glsnap=");
 
