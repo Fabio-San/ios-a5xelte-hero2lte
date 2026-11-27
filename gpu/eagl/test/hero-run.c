@@ -63,7 +63,7 @@ load_env(void)
  *
  * Our class follows the screen iOS is given (sweetfb_lw/sweetfb_lh with
  * sweetfb_scale=1, mkadt_herolte.py): 750x1334 (--iphone8) is
- * 375w-667h@2x~iphone. It used to be 480w-853h@3x~iphone always (the panel at
+ * 375w-667h@2x~iphone; 720x1280 (--canvas720) is 360w-640h@2x~iphone. It used to be 480w-853h@3x~iphone always (the panel at
  * scale 3), and since the iPhone 8 screen no wallpaper matched it: black. A
  * bundle given an earlier class is given the current one.
  */
@@ -73,6 +73,7 @@ load_env(void)
 
 static const char *const screen_classes[] = {
    SCREEN_FROM, SCREEN_NATIVE, "375w-667h@2x~iphone", "414w-896h@2x~iphone", "414w-736h@3x~iphone",
+   "360w-640h@2x~iphone",   /* 720x1280 @2x: exact 2x to 1440x2560 */
 };
 static const char *screen_to = SCREEN_NATIVE;
 
@@ -95,7 +96,9 @@ screen_class_pick(void)
    if (sysctlbyname("kern.bootargs", args, &size, NULL, 0) != 0)
       args[0] = 0;
    long scaled = boot_arg(args, "sweetfb_scale"), w = boot_arg(args, "sweetfb_lw"), h = boot_arg(args, "sweetfb_lh");
-   if (scaled > 0 && w == 750 && h == 1334)
+   if (scaled > 0 && w == 720 && h == 1280)
+      screen_to = "360w-640h@2x~iphone";
+   else if (scaled > 0 && w == 750 && h == 1334)
       screen_to = "375w-667h@2x~iphone";
    else if (scaled > 0 && w == 828 && h == 1792)
       screen_to = "414w-896h@2x~iphone";
