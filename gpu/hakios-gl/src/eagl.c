@@ -980,7 +980,6 @@ target_to_surface(struct eagl *e, struct image *image)
 	uint8_t *base;
 
 	image->drawn = false;
-	image_preserve_end(e, image);
 	if (image->mirror != 0) {
 		GLint read = 0, draw = 0;
 
@@ -995,6 +994,7 @@ target_to_surface(struct eagl *e, struct image *image)
 		}
 		glBindFramebuffer(GL_READ_FRAMEBUFFER, e->reader);
 		glFramebufferTexture2D(GL_READ_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, image->texture, 0);
+		image_preserve_end(e, image);   /* 0396: reader now has this image's texture */
 		glBindFramebuffer(GL_DRAW_FRAMEBUFFER, e->writer);
 		glFramebufferTexture2D(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, image->mirror, 0);
 		glBlitFramebuffer(0, 0, image->width, image->height, 0, image->invert ? image->height : 0, image->width,
@@ -4288,12 +4288,14 @@ my_glFramebufferTexture2D(void *context, GLenum target, GLenum attachment, GLenu
 	clear_now(e);
 	if (attachment == GL_COLOR_ATTACHMENT0 && target != GL_READ_FRAMEBUFFER) {
 		e->colour = texture;
-		image_preserve_begin(e, image_of(e, texture));
 	}
 	if (eagl_tracing) {
 		eagl_trace("glFramebufferTexture2D(%#x, %#x, %#x, %u, %d)\n", target, attachment, to, texture, level);
 	}
 	glFramebufferTexture2D(target, attachment, to, texture, level);
+	if (attachment == GL_COLOR_ATTACHMENT0 && target != GL_READ_FRAMEBUFFER) {
+		image_preserve_begin(e, image_of(e, texture));   /* 0396: after the attachment exists */
+	}
 	EAGL_LEAVE(e, 0x1530);
 }
 
