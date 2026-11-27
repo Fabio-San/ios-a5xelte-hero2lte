@@ -67,13 +67,13 @@ static struct hbo bos[MAX_BOS + 1];     /* by kernel handle */
 #define MAX_PRIME 256
 static struct { int fd; uint32_t handle; } primes[MAX_PRIME];  /* imported surfaces' stand-in descriptors */
 static int debug = -1;
-static uint64_t submits, faults;
+static uint64_t submits, faults, batch_calls, batch_jobs;
 
 /* Where the time goes, logged every 5 s while the GPU is used: submits (GPU
  * time as the kernel measured it, and the whole call) and BO creation (the
  * kernel zeroes, cleans and maps every new buffer). */
 static struct {
-   uint64_t start_ns, submits, gpu_us, submit_ns, creates, create_bytes, create_ns, frees;
+   uint64_t start_ns, submits, gpu_us, submit_ns, creates, create_bytes, create_ns, frees, batch_calls, batch_jobs;
    uint64_t sel_calls[8], sel_ns[8];    /* (2026-11-14) every kernel call, by selector: where mach_msg2_trap's time goes */
 } st;
 static const char *const sel_names[8] = { "param", "create", "free", "map", "submit", "log", "surfacebo", "syncbo" };
@@ -96,9 +96,10 @@ stats_tick(uint64_t t)
    uint64_t wall = t - st.start_ns;
    if (wall < 5000000000ull)
       return;
-   herodrm_log("stats %.1f s: %llu submits, GPU %.1f ms (%.0f%%), submit calls %.1f ms | "
+   herodrm_log("stats %.1f s: %llu submits (%llu batch calls / %llu jobs), GPU %.1f ms (%.0f%%), submit calls %.1f ms | "
                "%llu new BOs %.1f MB in %.1f ms | %llu freed",
-               wall / 1e9, (unsigned long long)st.submits, st.gpu_us / 1e3,
+               wall / 1e9, (unsigned long long)st.submits, (unsigned long long)st.batch_calls,
+               (unsigned long long)st.batch_jobs, st.gpu_us / 1e3,
                100.0 * st.gpu_us * 1e3 / wall, st.submit_ns / 1e6,
                (unsigned long long)st.creates, st.create_bytes / 1048576.0, st.create_ns / 1e6,
                (unsigned long long)st.frees);
@@ -396,6 +397,10 @@ submit_batch_items(const struct batch_item *items, uint32_t count)
    uint64_t t1 = now_ns();
    submits += count;
    st.submits += count;
+   batch_calls++;
+   batch_jobs += count;
+   st.batch_calls++;
+   st.batch_jobs += count;
    st.gpu_us += out[1];
    st.submit_ns += t1 - t0;
    stats_tick(t1);
