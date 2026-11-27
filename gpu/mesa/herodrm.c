@@ -51,7 +51,8 @@ kern_return_t IOConnectCallMethod(io_connect_t connection, uint32_t selector,
 
 #define EXPORT __attribute__((visibility("default")))
 
-enum { SEL_PARAM, SEL_CREATE, SEL_FREE, SEL_MAP, SEL_SUBMIT, SEL_LOG, SEL_SURFACE_BO, SEL_SYNC_BO };
+enum { SEL_PARAM, SEL_CREATE, SEL_FREE, SEL_MAP, SEL_SUBMIT, SEL_LOG, SEL_SURFACE_BO, SEL_SYNC_BO,
+       SEL_FENCE = 8, SEL_WAIT_FENCE = 9, SEL_SUBMIT_BATCH = 10 };
 
 #define MAX_BOS 4096
 
@@ -292,6 +293,7 @@ lookup(uint32_t handle)
 }
 
 static bool async_on;
+static bool batch_on = true;   /* 0395: HERO_BATCH=0 disables the batch selector */
 static uint64_t bo_last_job[MAX_BOS + 1];       /* by handle: the count of queued jobs when the last one naming it went on */
 static void queue_drain(void);
 static void bo_wait(uint32_t handle);
@@ -379,6 +381,36 @@ dump_chain(uint64_t jc)
    }
 }
 
+/* 0395: one ioctl for up to 8 job chains of this client, strictly in order. */
+struct batch_item { uint64_t jc; uint32_t js, flags; };
+
+static int
+submit_batch_items(const struct batch_item *items, uint32_t count)
+{
+   uint64_t out[4] = { 0, 0, 0, ~0ull };
+   size_t outlen = sizeof(out);
+   uint64_t t0 = now_ns();
+   kern_return_t kr = IOConnectCallMethod(conn, SEL_SUBMIT_BATCH, NULL, 0,
+                                          items, (size_t)count * 16,
+                                          NULL, NULL, out, &outlen);
+   uint64_t t1 = now_ns();
+   submits += count;
+   st.submits += count;
+   st.gpu_us += out[1];
+   st.submit_ns += t1 - t0;
+   stats_tick(t1);
+   if (kr || out[3]) {
+      faults++;
+      if (faults <= 16 || debug > 0)
+         herodrm_log("BATCH %u jobs: kr 0x%x completed %llu error %llu",
+                     count, kr, (unsigned long long)out[2], (unsigned long long)out[3]);
+      return fail(EIO);
+   }
+   DBG("BATCH %u jobs: %llu us, fence %llu", count,
+       (unsigned long long)out[1], (unsigned long long)out[0]);
+   return 0;
+}
+
 static int
 submit_now(uint64_t jc, uint64_t js)
 {
@@ -430,13 +462,31 @@ queue_worker(void *arg)
    pthread_set_qos_class_self_np(QOS_CLASS_USER_INTERACTIVE, 0);
    pthread_mutex_lock(&qlock);
    for (;;) {
+      uint64_t at, n = 0;
+      struct batch_item items[8];
+
       while (finished == queued)
          pthread_cond_wait(&qwork, &qlock);
-      uint64_t jc = queue[finished % QUEUE_SIZE].jc, js = queue[finished % QUEUE_SIZE].js;
+      /* Drain what is already queued, in FIFO order, without adding delay:
+       * finished still means "jobs completed", so queue_drain()/bo_wait()
+       * keep their exact semantics. */
+      at = finished;
+      while (at < queued && n < 8) {
+         items[n].jc = queue[at % QUEUE_SIZE].jc;
+         items[n].js = queue[at % QUEUE_SIZE].js;
+         items[n].flags = 0;
+         at++; n++;
+      }
       pthread_mutex_unlock(&qlock);
-      submit_now(jc, js);
+      if (batch_on && n > 1 && submit_batch_items(items, (uint32_t)n) == 0) {
+         /* batched */
+      } else {
+         for (uint64_t i = 0; i < n; i++) {
+            submit_now(items[i].jc, items[i].js);
+         }
+      }
       pthread_mutex_lock(&qlock);
-      finished++;
+      finished += n;
       pthread_cond_broadcast(&qdone);
    }
    return NULL;
@@ -488,6 +538,7 @@ submit(struct drm_panfrost_submit *s)
 
       asked = true;
       async_on = a && *a == '1' && pthread_create(&thread, NULL, queue_worker, NULL) == 0;
+      batch_on = getenv("HERO_BATCH") == NULL || getenv("HERO_BATCH")[0] != '0';
       herodrm_log("submits are %s", async_on ? "queued (HERO_ASYNC=1)" : "synchronous");
    }
    if (!async_on)
