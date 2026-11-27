@@ -1212,7 +1212,7 @@ frame_begin(struct eagl *e)
 	e->in_frame = true;
 	e->began = now_us();
 	/* 0387: clear the TOP 120 rows of the display picture: CoreAnimation's
-	 * status-bar draws are at y 1206..1295 of a 1334-tall framebuffer (the
+	 * status-bar draws are near the top of the logical framebuffer (the
 	 * y 71..85 of SB_DRAW is in the flipped vertex space). Off by default. */
 	if (sb_clear && e->framebuffer != 0 && e->colour != 0) {
 		struct image *target = image_of(e, e->colour);
@@ -1220,7 +1220,7 @@ frame_begin(struct eagl *e)
 		GLfloat colour[4] = { 0.f, 0.f, 0.f, 0.f };
 		GLboolean boxed = glIsEnabled(GL_SCISSOR_TEST);
 
-		if (target != NULL && target->target && target->width >= 750 && target->height >= 1334) {
+		if (target != NULL && target->target && target->width >= 720 && target->height >= 1280) {
 			glGetIntegerv(GL_VIEWPORT, box);
 			glGetIntegerv(GL_SCISSOR_BOX, scissor);
 			glEnable(GL_SCISSOR_TEST);

@@ -88,7 +88,7 @@ look_at_windows(void *unused)
 }
 
 /*
- * The ADT says "home button" (home-button-type 1): UIKit then has a status bar for this 750x1334 screen, where type 2
+ * The ADT says "home button" (home-button-type 1): UIKit then has a status bar for this screen, where type 2
  * gets the red rdar:45025538 one. SpringBoard alone is told type 2, which is where the home gestures are decided, as
  * the old home-gesture tweaks did. DROP_DIR gestures.off turns it off.
  */
@@ -105,7 +105,7 @@ says_yes(id self, SEL cmd)
 }
 
 /*
- * ...but told type 2, UIKit in SpringBoard asks each provider class in turn, none takes a 750x1334 screen and it ends on
+ * ...but told type 2, UIKit in SpringBoard asks each provider class in turn, none takes this screen and it ends on
  * the red rdar:45025538 fallback. The plain phone's class takes any screen here, and is put in where the fallback
  * still reaches the status bar.
  */
