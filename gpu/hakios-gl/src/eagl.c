@@ -1302,6 +1302,15 @@ frame_end(struct eagl *e, bool finished)
 
 	clear_now(e);
 	before = now_us();
+	{
+		static int wait_told;
+
+		if (!wait_told) {
+			wait_told = 1;
+			say("hakios-gl: 0392 wait_for_frames=%u sync_frames=%u HakiosWaitsForGPU=%u\n",
+			    wait_for_frames, sync_frames, display_waits());
+		}
+	}
 	for (unsigned i = 0; i < e->image_count; i++) {
 		if (e->images[i].target && e->images[i].drawn && e->images[i].mirror != 0) {
 			target_to_surface(e, &e->images[i]);    /* (the GPU's copy: before what follows sends it out) */
