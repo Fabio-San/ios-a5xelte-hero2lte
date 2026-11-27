@@ -224,6 +224,48 @@ Order chosen to keep the boot stable:
 Each step is a separate commit and a separate flash. Revert immediately if
 frame time gets worse, frames tear, touch dies or Wi-Fi disconnects.
 
+## Status (2026-11-27)
+
+### Done
+- **Level 1.1 — fence**: `HakiosWaitsForGPU` published, `glFinish()` skipped
+  (verified: `0392 wait_for_frames=0 sync_frames=1`). Median frame
+  10.988 µs -> 7.081 µs, no tearing.
+- **Level 1.2 — batch submit**: new IOKit selector 10, up to 8 jobs in strict
+  FIFO, `hg_mtx` taken **per job** (the single-lock version caused 30.993 µs
+  frames and choppiness — reverted). Mesa `HERO_ASYNC` worker drains the
+  queue into batches, `HERO_BATCH=0` killswitch. Measured: 3328 submits /
+  826 batch calls / 3312 jobs in 5 s, i.e. ~165 ioctl/s instead of ~1410/s,
+  `submit calls - GPU` down from 490 ms to 92 ms per 5 s.
+- **Not achieved**: none of this changed the status-bar noise/rectangles.
+  These were pure plumbing performance fixes.
+
+### Remaining, in order of expected impact on the VISUAL defect
+1. **Zero-copy VGR0 swapchain (Level 1.2b)** — remove `target_to_surface()`:
+   the full 750×1334 frame (~4 MB) is still copied into the display surface
+   every frame (1–16 ms spikes) and then read again by VGR0. Render straight
+   into the 2–3 physical swapchain buffers.
+2. **Per-buffer partial-damage preservation** — the `glsbcbar` black hole and
+   the `glpreserve` failure prove CoreAnimation does not repaint the status
+   band every frame. A single kept texture was wrong with two rotating
+   buffers; each buffer needs its own preserved copy (or full-frame draws).
+   This is the most likely place where the stale/noisy band lives.
+3. **Clean IOSurface transport (Level 1.3)** — seed is still 1 on unlock
+   (clients write wrapped memory without Lock/Unlock), `WrapClientImage`
+   (sel 6) still refused, `surface_changed()` still skips planes > 0.
+   Fix seed in `SweetSurface::Unlock`, implement sel 6 with `planes[0]`
+   populated, dirty-range cache maintenance.
+4. **Level 2** — cluster-aware scheduler, MIF/INT DVFS + TMU, UFS 32-tag/PRDT,
+   real display sleep, reserved-memory recovery. Performance/battery, not the
+   visual bug.
+5. **Level 3** — native Metal (AIR -> NIR -> Midgard). Months; removes the
+   GLES bridge entirely and would structurally avoid `gl_LastFragData`
+   workarounds.
+
+### Low value now
+- IRQ-driven wait in `hg_run` (Step 3 of the original batching plan): the
+  batch already cut the overhead from 490 ms to 92 ms per 5 s, so the
+  remaining time is real GPU work, not idle nap.
+
 ## Execution order
 
 1. Close the `herosnap` gate.
