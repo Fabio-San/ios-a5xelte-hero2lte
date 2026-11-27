@@ -72,7 +72,7 @@ a5fb_keep_on=1 a5fb_noconsole=1 a5fb_perf=1 a5fb_hz=60 sweetfb_native=1 sweetfb_
 sweetfb_lw=720 sweetfb_lh=1280 sweetfb_gpu=1 cpus=8 herogl=1 sweettop=1 \
 vm_compression_limit=98304 vm_compressor=2 \
 heronoexec=vmd,bluetoothd,searchd,ReportCrash,aggregated,analyticsd,cloudd,homed,driverkitd \
-glsb3=1 herogpu_mhz=650 herocpu_mhz=2288 herosb=1 sweetsample=-"
+glsb3=1 herogpu_mhz=419 herocpu_mhz=2288 herosb=1 sweetsample=-"
 
 python3 tools/mkpayload.py kernel.development.herolte herolte.adt payload.bin --cmdline "$CMDLINE"
 ```
