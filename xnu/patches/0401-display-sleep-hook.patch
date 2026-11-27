@@ -1,0 +1,31 @@
+--- a/iokit/Kernel/arm/SweetFramebuffer.cpp
++++ b/iokit/Kernel/arm/SweetFramebuffer.cpp
+@@ -78,6 +78,8 @@
+ /* 0388: herosnap=N dumps the 750x1334 source band every 60 frames for 10 s. */
+ static uint32_t hero_snap_at;
+ extern "C" volatile uint64_t herolte_screen_off_at;    /* bsd/dev/herolte_gpu.c (0330) */
++extern "C" bool herolte_touch_supplies(bool on);   /* 0400: herosleep=1 */
++static bool hero_sleep_on;
+ extern "C" boolean_t mach_timer_coalescing_enabled;    /* osfmk/kern/timer_call.c, sysctl kern.timer_coalescing_enabled */
+ #endif
+ 
+@@ -315,6 +317,7 @@
+ 	}
+ 	int at_tick = 0;
+ 	PE_parse_boot_argn("sweetfb_tick", &at_tick, sizeof(at_tick));
++	PE_parse_boot_argn("herosleep", &hero_sleep_on, sizeof(hero_sleep_on));  /* 0400 */
+ 	if (!at_tick) {
+ 		fShow = IOTimerEventSource::timerEventSource(this, &AppleCLCD::showFired);
+ 		if (fShow != NULL && fWorkLoop->addEventSource(fShow) != kIOReturnSuccess) {
+@@ -1264,6 +1267,11 @@
+ #if defined(ARM64_BOARD_CONFIG_HEROLTE)
+ 			/* (0330) the cores' rates follow it: bsd/dev/herolte_gpu.c, hg_power_thread */
+ 			herolte_screen_off_at = off ? mach_absolute_time() : 0;
++			/* 0400: cut the touch supplies in deep sleep. herosleep=0 (default)
++			 * keeps today's behaviour; wake restores them before the panel. */
++			if (hero_sleep_on) {
++				herolte_touch_supplies(!off);
++			}
+ #endif
+ 			IOLog("SWEET FB: display %s\n", off ? "off" : "on");
+ 		}

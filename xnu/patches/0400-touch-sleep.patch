@@ -1,0 +1,35 @@
+--- a/bsd/dev/herolte_touch.c
++++ b/bsd/dev/herolte_touch.c
+@@ -494,6 +494,32 @@
+ 	return apm_ready && apm_pmic_write(0x1d, value);
+ }
+ 
++/* 0400: display sleep: cut/restore tsp_io + tsp_avdd (LDO32/33). */
++bool herolte_touch_supplies(bool on);
++
++bool
++herolte_touch_supplies(bool on)
++{
++	uint8_t l32 = 0, l33 = 0;
++
++	if (!apm_ready || !apm_pmic_read(S2MPS16_L32CTRL, &l32) ||
++	    !apm_pmic_read(S2MPS16_L33CTRL, &l33)) {
++		return false;
++	}
++	if (on) {
++		l32 |= S2MPS16_ENABLE;
++		l33 |= S2MPS16_ENABLE;
++	} else {
++		l32 &= (uint8_t)~S2MPS16_ENABLE;
++		l33 &= (uint8_t)~S2MPS16_ENABLE;
++	}
++	if (!apm_pmic_write(S2MPS16_L32CTRL, l32) || !apm_pmic_write(S2MPS16_L33CTRL, l33)) {
++		return false;
++	}
++	printf("HEROLTE TOUCH: supplies %s (LDO32=%#x LDO33=%#x)\n", on ? "on" : "off", l32, l33);
++	return true;
++}
++
+ /* For herolte_gpu.c: vdd_g3d only. Refused until the touch thread has started the APM. */
+ bool herolte_apm_g3d_voltage(uint8_t value);
+ bool
