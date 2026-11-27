@@ -1307,8 +1307,7 @@ frame_end(struct eagl *e, bool finished)
 
 		if (!wait_told) {
 			wait_told = 1;
-			say("hakios-gl: 0392 wait_for_frames=%u sync_frames=%u HakiosWaitsForGPU=%u\n",
-			    wait_for_frames, sync_frames, display_waits());
+			say("hakios-gl: 0392 wait_for_frames=%u sync_frames=%u\n", wait_for_frames, sync_frames);
 		}
 	}
 	for (unsigned i = 0; i < e->image_count; i++) {
