@@ -53,9 +53,9 @@ the SpringBoard and app helpers, the audio plug-in and `hero-run`.
 cd shim/herolte && CROSS=aarch64-none-elf- sh build.sh && cd ../..
 
 # Apple device tree with the S7 hardware: 2 GiB of the second DRAM bank,
-# iOS drawing an iPhone 8 screen (750x1334, scaled to the panel by the GPU).
+# iOS drawing a 720x1280 @2x screen (exact 2x scaling to the 1440x2560 panel by VGR0); use --iphone8 for the 750x1334 layout.
 # Needs research/ipsw-x/d22ap.adt.
-python3 tools/mkadt_herolte.py herolte.adt --bank2 --bank2-mb 2048 --iphone8
+python3 tools/mkadt_herolte.py herolte.adt --bank2 --bank2-mb 2048 --canvas720
 
 # Recommended (kernel with patches 0326-0329): about 1 GiB more RAM from the
 # first DRAM bank (the pieces Samsung does not reserve).
@@ -69,7 +69,7 @@ CMDLINE="heroaudio=3 heroquantum=500 debug=0xc keepsyms=1 -noprogress rd=ufsroot
 ufsroot=USERDATA ufsrw=1 rootrw=1 cs_enforcement_disable=1 unentitled_ios_sim_launch=1 \
 ignition_level=1 launchd_unsecure_cache=1 wdt=-1 -wdt_no_pmu wdt_test=no_user_checkin \
 a5fb_keep_on=1 a5fb_noconsole=1 a5fb_perf=1 a5fb_hz=60 sweetfb_native=1 sweetfb_scale=1 \
-sweetfb_lw=750 sweetfb_lh=1334 sweetfb_gpu=1 cpus=8 herogl=1 sweettop=1 \
+sweetfb_lw=720 sweetfb_lh=1280 sweetfb_gpu=1 cpus=8 herogl=1 sweettop=1 \
 vm_compression_limit=98304 vm_compressor=2 \
 heronoexec=vmd,bluetoothd,searchd,ReportCrash,aggregated,analyticsd,cloudd,homed,driverkitd \
 glsb3=1 herogpu_mhz=650 herocpu_mhz=2288 herosb=1 sweetsample=-"
