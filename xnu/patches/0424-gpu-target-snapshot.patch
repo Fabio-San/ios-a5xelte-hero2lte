@@ -1,6 +1,6 @@
 --- a/bsd/dev/herolte_gpu.c
 +++ b/bsd/dev/herolte_gpu.c
-@@ -1408,6 +1408,7 @@
+@@ -1417,6 +1417,7 @@
  static vm_offset_t hgp_scr;
  static int hgp_state;                   /* 0 not set up, 1 ready, -1 failed */
  static uint64_t hgp_frames;
@@ -8,7 +8,7 @@
  
  /* Wait (bounded) for AS0 to finish its command. */
  static bool
-@@ -2081,6 +2082,32 @@
+@@ -2110,6 +2111,32 @@
  	if (++hgp_frames <= 3 || !ok) {
  		printf("HEROLTE GPU PRESENT: frame %llu %ux%u stride %u slot %d -> %s\n",
  		    hgp_frames, w, h, stride, s, ok ? "ok" : "failed");
@@ -41,8 +41,8 @@
  	}
  	return ok;
  }
-@@ -3913,6 +3940,7 @@
- 	PE_parse_boot_argn("herogpu_flush", &hg_flush_mode, sizeof(hg_flush_mode));
+@@ -4016,6 +4043,7 @@
+ 	PE_parse_boot_argn("herogpu_cores", &hg_client_cores, sizeof(hg_client_cores));
  	PE_parse_boot_argn("herogpu_sleep_us", &hg_sleep_us, sizeof(hg_sleep_us));
  	PE_parse_boot_argn("herogpu_sleep_present", &hg_sleep_present, sizeof(hg_sleep_present));
 +	PE_parse_boot_argn("herosnap", &hg_snap_at, sizeof(hg_snap_at));
