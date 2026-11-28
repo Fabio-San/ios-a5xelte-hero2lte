@@ -79,6 +79,19 @@ python3 tools/mkpayload.py kernel.development.herolte herolte.adt payload.bin --
 
 Keep `-noprogress`: a boot line without it panicked early (not yet understood).
 
+### GPU clock
+
+Keep `herogpu_mhz=419` (612.5 mV). Without the boot-arg the bootloader's 260 MHz
+stays. 650 MHz (700 mV) is rejected: it faults and soft-resets the GPU. 546 MHz
+(662.5 mV) boots with no faults and reports faster frame times, but in practice
+it produced immediate visual artifacts and a wrong dock, so it is rejected too.
+
+A dynamic clock is possible in principle (`hg_power_thread` already does the
+equivalent voltage/PLL switching for the CPU), but a GPU version would have to
+be gated on the GPU being idle and would not fix those artifacts; it is not
+implemented here.
+
+
 With patch 0330 the Mongoose cores go back to the bootloader's 728 MHz while
 the screen is off (Power) and while the battery is at 42 C or more
 (`herohot=N` changes it); `heropower=0` turns that off.
