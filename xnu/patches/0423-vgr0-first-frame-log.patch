@@ -1,0 +1,11 @@
+--- a/bsd/dev/herolte_gpu.c
++++ b/bsd/dev/herolte_gpu.c
+@@ -2062,6 +2062,8 @@
+ 	hg_run_quiet = false;
+ 	if (ok && small && hvg_state == 0) {
+ 		/* the first frame for VGR0: into the buffer G1 does not show, then window 0 to VGR0 reading it */
++		printf("HEROLTE VGR0 FIRST: %ux%u pa %#llx hfb %d slot %d\n", w, h,
++		    (uint64_t)target_pa, hfb_state, s);
+ 		if (hfb_state == 1) {
+ 			hvg_enter(target_pa, w, h);
+ 		}

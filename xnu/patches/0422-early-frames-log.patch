@@ -1,0 +1,17 @@
+--- a/iokit/Kernel/arm/SweetFramebuffer.cpp
++++ b/iokit/Kernel/arm/SweetFramebuffer.cpp
+@@ -525,6 +525,14 @@
+ 	};
+ 
+ 	IOLockLock(fb->fLock);
++#if defined(ARM64_BOARD_CONFIG_HEROLTE)
++	if (count <= 3) {
++		IOLog("HERO FB EARLY: frame %llu panel %ux%u row %u at %#llx | logical %ux%u at %#llx\n",
++		    (unsigned long long)count, fb->fWidth, fb->fHeight, fb->fRowBytes, (uint64_t)fb->fPixels,
++		    fb->fLogicalW, fb->fLogicalH,
++		    fb->fSurface ? (uint64_t)(uintptr_t)fb->fSurface->kernelAddress() : 0);
++	}
++#endif
+ 	for (unsigned int i = 0; i < fb->fClients->getCount(); i++) {
+ 		IOMobileFramebufferUserClient *client =
+ 		    (IOMobileFramebufferUserClient *)fb->fClients->getObject(i);
