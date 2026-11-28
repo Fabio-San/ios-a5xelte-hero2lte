@@ -224,7 +224,12 @@ Order chosen to keep the boot stable:
 Each step is a separate commit and a separate flash. Revert immediately if
 frame time gets worse, frames tear, touch dies or Wi-Fi disconnects.
 
-## Status (2026-11-27)
+## Status (2026-11-28)
+
+The current display source is **720×1280 @2x**, scaled exactly 2× to the
+1440×2560 panel by VGR0 (`--canvas720` in `tools/mkadt_herolte.py`). Older
+sections below describe the original 750×1334 baseline; the principles still
+hold, but the numbers refer to that canvas.
 
 ### Done
 - **Level 1.1 — fence**: `HakiosWaitsForGPU` published, `glFinish()` skipped
@@ -236,43 +241,74 @@ frame time gets worse, frames tear, touch dies or Wi-Fi disconnects.
   queue into batches, `HERO_BATCH=0` killswitch. Measured: 3328 submits /
   826 batch calls / 3312 jobs in 5 s, i.e. ~165 ioctl/s instead of ~1410/s,
   `submit calls - GPU` down from 490 ms to 92 ms per 5 s.
-- **Not achieved**: none of this changed the status-bar noise/rectangles.
-  These were pure plumbing performance fixes.
+- **720×1280 @2x (720p)**: `--canvas720`, wallpaper class
+  `360w-640h@2x~iphone`, root tune class, VGR0 stride derived from the width
+  (0398), `mgcache.token` to force MobileGestalt, correct `autorun` (the real
+  `hero-run`) in the drop zone. Faster than 750×1334 and an exact 2× scale.
+- **UFS profiling (0399)**: `heroufspin` defaults to 80 µs; hundreds of
+  commands with **0 sleeps and 0 ms asleep**. There is no sign of queue
+  contention, so UFS multi-queue is **deferred** (Gemini strategy: low value).
+  Frame median 11.646 -> 9.030 µs in 720p tests.
+- **GPU clock**: `herogpu_mhz=419` (612.5 mV) is the accepted setting:
+  0 `as_fault`, 0 soft resets, median frame 7.909 µs against 11.646 µs at the
+  bootloader's 260 MHz. 650 MHz (700 mV) faults and soft-resets. 546 MHz
+  (662.5 mV) has no faults and a better median (3.852 µs) but produced
+  **immediate visual artifacts, lag and a wrong dock**, so it is rejected.
+  The clock is set once at boot by `hg_clock_set()`; there is no runtime DVFS.
+- **Display sleep (0400/0401)**: the conservative LDO-only path is committed
+  but `herosleep=0` by default, i.e. off. True DSI SLPIN/DISPOFF plus sec_ts
+  re-init is still open (the LDO-only attempt caused compressed snapshots
+  and a UI restart).
 
-### Remaining, in order of expected impact on the VISUAL defect
+### Not fixed
+- The status-bar "analog noise" rectangles are not formally closed. They are
+  less prominent with the 720p and cache fixes, but none of the targeted
+  userland paths (see the evidence list above) removes them.
+- Intermittent `backboardd` SIGSEGV with the same QuartzCore backtrace: 2
+  crashes in **both** the 419 and the 546 logs, so the GPU clock is not the
+  trigger. Symbols are redacted; not fixed.
+
+### Remaining, in order of expected impact
 1. **Zero-copy VGR0 swapchain (Level 1.2b)** — remove `target_to_surface()`:
-   the full 750×1334 frame (~4 MB) is still copied into the display surface
-   every frame (1–16 ms spikes) and then read again by VGR0. Render straight
-   into the 2–3 physical swapchain buffers.
+   the full frame (~4 MB at 750×1334, less at 720×1280) is still copied into
+   the display surface every frame and then read again by VGR0. Render
+   straight into the 2–3 physical swapchain buffers.
 2. **Per-buffer partial-damage preservation** — the `glsbcbar` black hole and
    the `glpreserve` failure prove CoreAnimation does not repaint the status
-   band every frame. A single kept texture was wrong with two rotating
-   buffers; each buffer needs its own preserved copy (or full-frame draws).
-   This is the most likely place where the stale/noisy band lives.
-3. **Clean IOSurface transport (Level 1.3)** — seed is still 1 on unlock
-   (clients write wrapped memory without Lock/Unlock), `WrapClientImage`
-   (sel 6) still refused, `surface_changed()` still skips planes > 0.
-   Fix seed in `SweetSurface::Unlock`, implement sel 6 with `planes[0]`
-   populated, dirty-range cache maintenance.
-4. **Level 2** — cluster-aware scheduler, MIF/INT DVFS + TMU, UFS 32-tag/PRDT,
-   real display sleep, reserved-memory recovery. Performance/battery, not the
-   visual bug.
-5. **Level 3** — native Metal (AIR -> NIR -> Midgard). Months; removes the
-   GLES bridge entirely and would structurally avoid `gl_LastFragData`
+   band every frame. One kept texture was wrong with two rotating buffers;
+   each buffer needs its own preserved copy (or genuinely full-frame draws).
+3. **Clean IOSurface transport (Level 1.3)** — seed still 1 on unlock,
+   `WrapClientImage` (sel 6) still refused, `surface_changed()` still skips
+   planes > 0. Fix the seed in `SweetSurface::Unlock`, implement sel 6 with
+   `planes[0]` populated, use dirty-range cache maintenance.
+4. **Level 2** — cluster-aware HMP scheduler, MIF/INT DVFS and TMU, real
+   display sleep, reserved-memory recovery. Performance and battery, not the
+   visual defect.
+5. **Runtime GPU DVFS** — `hg_power_thread` already does the CPU's
+   mux/PLL/voltage switching and reads the GPU TMU. A GPU version needs idle
+   gating (job slots plus `hg_mtx`) and a policy (419 base, boost under load,
+   338/260 on screen-off or hot). Deferred: it would not fix the 546
+   artifacts and a switch during a live job risks a bus hang.
+6. **Level 3** — native Metal (AIR → NIR → Midgard). Months of work; removes
+   the GLES bridge entirely and structurally avoids `gl_LastFragData`
    workarounds.
 
 ### Low value now
+- UFS multi-queue: the 0399 profiling shows no sleeps and no queue contention.
 - IRQ-driven wait in `hg_run` (Step 3 of the original batching plan): the
   batch already cut the overhead from 490 ms to 92 ms per 5 s, so the
   remaining time is real GPU work, not idle nap.
 
 ## Execution order
 
-1. Close the `herosnap` gate.
-2. Level 1: job batching + kernel fence, then clean IOSurface seed/wrap, then
-   zero-copy swapchain.
-3. Level 2: UFS multi-queue, scheduler/DVFS/TMU, real display sleep, RAM.
-4. Level 3: AIR → NIR → Midgard prototype.
+1. Keep the stable 720p / 419 MHz baseline; verify every flash with a log pull.
+2. Level 1: zero-copy VGR0 swapchain with per-buffer damage preservation, then
+   clean IOSurface seed/wrap. This is where the stale/noisy band most likely
+   lives.
+3. Level 2: HMP scheduler, MIF/INT DVFS + TMU, real display sleep, RAM
+   recovery. UFS multi-queue only if profiling ever shows contention.
+4. Runtime GPU DVFS, gated on GPU idle, as a separate reversible experiment.
+5. Level 3: AIR → NIR → Midgard prototype.
 
 Every step must keep the boot stable, Wi-Fi and touch working, and must be
 measured against `tools/herolte-log-pull.py` frame counters before and after.
