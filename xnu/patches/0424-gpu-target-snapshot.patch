@@ -1,0 +1,51 @@
+--- a/bsd/dev/herolte_gpu.c
++++ b/bsd/dev/herolte_gpu.c
+@@ -1408,6 +1408,7 @@
+ static vm_offset_t hgp_scr;
+ static int hgp_state;                   /* 0 not set up, 1 ready, -1 failed */
+ static uint64_t hgp_frames;
++static uint32_t hg_snap_at;             /* 0424: herosnap=N, the buffer VGR0 reads */
+ 
+ /* Wait (bounded) for AS0 to finish its command. */
+ static bool
+@@ -2079,6 +2080,32 @@
+ 	if (++hgp_frames <= 3 || !ok) {
+ 		printf("HEROLTE GPU PRESENT: frame %llu %ux%u stride %u slot %d -> %s\n",
+ 		    hgp_frames, w, h, stride, s, ok ? "ok" : "failed");
++	}
++	/* 0424: snapshot the buffer VGR0 actually scales; fSurface is never drawn into. */
++	if (ok && hg_snap_at != 0 && hgp_frames >= hg_snap_at && hgp_frames - hg_snap_at <= 600 &&
++	    ((hgp_frames - hg_snap_at) % 60) == 0) {
++		const uint32_t *src = (const uint32_t *)phystokv(target_pa);
++		const uint32_t words = stride / 4;
++		const uint32_t rows = h < 128 ? h : 128;
++
++		printf("HERO GPU SNAP: frame %llu pa %#llx %ux%u stride %u\n",
++		    (unsigned long long)hgp_frames, target_pa, w, h, stride);
++		for (uint32_t y = 0; y < rows; y += 2) {
++			const uint32_t *line = src + (uint64_t)y * words;
++			char buf[1408];
++			size_t used = 0;
++
++			for (uint32_t x = 0; x < 24; x++) {
++				used += (size_t)snprintf(buf + used, sizeof(buf) - used, " %08x", line[x]);
++			}
++			for (uint32_t x = w / 2 - 12; x < w / 2 + 12; x++) {
++				used += (size_t)snprintf(buf + used, sizeof(buf) - used, " %08x", line[x]);
++			}
++			for (uint32_t x = w - 24; x < w; x++) {
++				used += (size_t)snprintf(buf + used, sizeof(buf) - used, " %08x", line[x]);
++			}
++			printf("HERO GPU SNAP row %u:%s\n", y, buf);
++		}
+ 	}
+ 	return ok;
+ }
+@@ -3911,6 +3938,7 @@
+ 	PE_parse_boot_argn("herogpu_flush", &hg_flush_mode, sizeof(hg_flush_mode));
+ 	PE_parse_boot_argn("herogpu_sleep_us", &hg_sleep_us, sizeof(hg_sleep_us));
+ 	PE_parse_boot_argn("herogpu_sleep_present", &hg_sleep_present, sizeof(hg_sleep_present));
++	PE_parse_boot_argn("herosnap", &hg_snap_at, sizeof(hg_snap_at));
+ 	int wifi = 1;                                          /* herowifi=0: no Wi-Fi */
+ 	PE_parse_boot_argn("herowifi", &wifi, sizeof(wifi));
+ 	if (wifi &&

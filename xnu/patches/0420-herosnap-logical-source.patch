@@ -1,13 +1,13 @@
 --- a/iokit/Kernel/arm/SweetFramebuffer.cpp
 +++ b/iokit/Kernel/arm/SweetFramebuffer.cpp
-@@ -530,23 +530,30 @@
+@@ -530,27 +530,14 @@
  		    (IOMobileFramebufferUserClient *)fb->fClients->getObject(i);
  		client->notify(SWEET_FB_NOTIFY_VSYNC, values, 6);
  	}
 -	/* 0388: CPU read of the Mali's 750x1334 source (FB at fPixels). Several
 -	 * frames are dumped so the noisy one is not missed. */
-+	/* 0420: dump the logical source Mali wrote. On HEROLTE fPixels is the
-+	 * panel buffer (1440x2560) when scaled: the old dump read the wrong memory. */
++	/* 0420: report the buffers; the pixel snapshot is taken at present time (0424),
++	 * where the physical address VGR0 reads is known. */
  	if (hero_snap_at != 0 && count >= hero_snap_at && count - hero_snap_at <= 600 &&
 -	    ((count - hero_snap_at) % 60) == 0 && fb->fPixels != 0) {
 -		const uint32_t sw = 750, srow = 3072;
@@ -17,29 +17,21 @@
 -			uint32_t row_y = 64 + y * 2;
 -			const uint32_t *line = (const uint32_t *)(fb->fPixels + (uint64_t)row_y * srow);
 -			char buf[1280];
-+	    ((count - hero_snap_at) % 60) == 0 && fb->fSurface != 0) {
-+		const uint32_t sw = fb->fLogicalW, sh = fb->fLogicalH;
-+		const uint32_t srow = (sw * 4 + 63) & ~63u;
-+		const uint32_t *src = (const uint32_t *)fb->fSurface->kernelAddress();
-+
-+		IOLog("HERO SNAP SRC: frame %llu source %ux%u row %u at %#llx (panel %ux%u row %u at %#llx)\n",
-+		    (unsigned long long)count, sw, sh, srow, (uint64_t)(uintptr_t)src,
-+		    fb->fWidth, fb->fHeight, fb->fRowBytes, (uint64_t)fb->fPixels);
-+		for (uint32_t y = 0; y < 64; y++) {
-+			uint32_t row_y = y * 2;
-+			const uint32_t *line = src + (uint64_t)row_y * (srow / 4);
-+			char buf[1408];
- 			size_t used = 0;
- 
+-			size_t used = 0;
+-
 -			for (uint32_t x = 0; x < 64 && used + 16 < sizeof(buf); x++) {
-+			for (uint32_t x = 0; x < 24 && used + 16 < sizeof(buf); x++) {
- 				used += (size_t)snprintf(buf + used, sizeof(buf) - used, " %08x", line[x]);
- 			}
+-				used += (size_t)snprintf(buf + used, sizeof(buf) - used, " %08x", line[x]);
+-			}
 -			for (uint32_t x = sw - 64; x < sw && used + 16 < sizeof(buf); x++) {
-+			for (uint32_t x = sw / 2 - 12; x < sw / 2 + 12 && used + 16 < sizeof(buf); x++) {
-+				used += (size_t)snprintf(buf + used, sizeof(buf) - used, " %08x", line[x]);
-+			}
-+			for (uint32_t x = sw - 24; x < sw && used + 16 < sizeof(buf); x++) {
- 				used += (size_t)snprintf(buf + used, sizeof(buf) - used, " %08x", line[x]);
- 			}
- 			IOLog("HERO SNAP row %u:%s\n", row_y, buf);
+-				used += (size_t)snprintf(buf + used, sizeof(buf) - used, " %08x", line[x]);
+-			}
+-			IOLog("HERO SNAP row %u:%s\n", row_y, buf);
+-		}
++	    ((count - hero_snap_at) % 60) == 0) {
++		IOLog("HERO SNAP SRC: frame %llu logical %ux%u at %#llx (panel %ux%u row %u at %#llx)\n",
++		    (unsigned long long)count, fb->fLogicalW, fb->fLogicalH,
++		    fb->fSurface ? (uint64_t)fb->fSurface->kernelAddress() : 0,
++		    fb->fWidth, fb->fHeight, fb->fRowBytes, (uint64_t)fb->fPixels);
+ 	}
+ 	if (fb->fPowerOff) {
+ 		/* Fade out: halve every channel each vsync, then black, then idle. */
