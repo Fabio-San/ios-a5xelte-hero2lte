@@ -1,0 +1,123 @@
+--- a/iokit/Kernel/arm/SweetSurface.h
++++ b/iokit/Kernel/arm/SweetSurface.h
+@@ -39,6 +39,7 @@
+ 	IOOptionBits              mapCache;     /* cache mode for user mappings */
+ 	IOBufferMemoryDescriptor *state;        /* shared state page, read-only for users */
+ 	IOMemoryMap              *kernelMap;    /* lazily created for kernel copies */
++	bool                      zcopy;        /* 0500: pixels are a panel swap buffer */
+ 
+ 	bool init() APPLE_KEXT_OVERRIDE { return OSObject::init(); }
+ 	void free() APPLE_KEXT_OVERRIDE;
+--- a/iokit/Kernel/arm/SweetSurface.cpp
++++ b/iokit/Kernel/arm/SweetSurface.cpp
+@@ -76,6 +76,8 @@
+ static uint32_t      sweet_surface_next_id = 1;
+ static uint32_t      sweet_surface_creates_logged;
+ static uint64_t      sweet_surface_wired;       /* bytes of buffer surfaces */
++static int           hero_zcopy;                /* 0500: herozcopy=1 */
++static uint32_t      hero_zslot;
+ #define SWEET_SURFACE_WIRED_MAX         (1536ull << 20)
+ 
+ OSDefineMetaClassAndStructors(SweetSurface, OSObject);
+@@ -190,6 +192,9 @@
+ static void
+ sweet_surface_init_lock(void)
+ {
++	if (!hero_zcopy) {
++		PE_parse_boot_argn("herozcopy", &hero_zcopy, sizeof(hero_zcopy));
++	}
+ 	if (sweet_surface_lock == NULL) {
+ 		IOLock *lock = IOLockAlloc();
+ 		if (!OSCompareAndSwapPtr(NULL, lock, &sweet_surface_lock)) {
+@@ -203,6 +208,9 @@
+ {
+ 	sweet_surface_init_lock();
+ 	SweetSurface *s = OSTypeAlloc(SweetSurface);
++	if (s != NULL) {
++		s->zcopy = false;
++	}
+ 	if (s == NULL || !s->init()) {
+ 		OSSafeReleaseNULL(s);
+ 		return NULL;
+@@ -735,6 +743,22 @@
+ 	s->parentID = args->scalarInputCount > 0 ? (uint32_t)args->scalarInput[0] : 0;
+ 	ret = sweet_surface_layout(s, props);
+ #if defined(ARM64_BOARD_CONFIG_HEROLTE)
++	if (ret == kIOReturnSuccess && hero_zcopy && s->width == 720 && s->height == 1280 &&
++	    s->bytesPerRow == 2880 && s->pixelFormat == 'BGRA' && s->planeCount == 0) {
++		uint64_t zpa = (hero_zslot++ & 1) ? 0x91000000ULL : 0xe2a00000ULL;
++		IOMemoryDescriptor *over = IOMemoryDescriptor::withPhysicalAddress(zpa, s->allocSize, kIODirectionInOut);
++		if (over != NULL && over->prepare() == kIOReturnSuccess) {
++			s->memory = over;
++			s->mapCache = kIOMapWriteCombineCache;
++			s->zcopy = true;
++			if (!sweet_surface_publish(s)) {
++				ret = kIOReturnNoResources;
++			}
++			IOLog("SWEET SURF: zcopy id %u %ux%u -> %#llx\n", s->id, s->width, s->height, zpa);
++		} else {
++			OSSafeReleaseNULL(over);
++		}
++	}
+ 	/*
+ 	 * A surface over the client's own memory, page aligned (SpringBoard's
+ 	 * 1008x1792 RGhA picture): the surface IS those pages, wired, so what the
+@@ -782,7 +806,7 @@
+ 			    wrapped ? "the surface is that memory" : "not wired, copied", why[0], why[1]);
+ 		}
+ 	}
+-	if (ret == kIOReturnSuccess && !wrapped) {
++	if (ret == kIOReturnSuccess && !wrapped && !s->zcopy) {
+ #else
+ 	if (ret == kIOReturnSuccess) {
+ #endif
+--- a/iokit/Kernel/arm/SweetFramebuffer.cpp
++++ b/iokit/Kernel/arm/SweetFramebuffer.cpp
+@@ -994,6 +994,17 @@
+ 		}
+ #endif
+ #if defined(ARM64_BOARD_CONFIG_HEROLTE)
++#if defined(ARM64_BOARD_CONFIG_HEROLTE)
++		if (s->zcopy && src != 0 && bpe == 4 && w == (int32_t)fLogicalW && h == (int32_t)fLogicalH) {
++			IOByteCount zlen = 0;
++			addr64_t zpa = s->memory->getPhysicalSegment(0, &zlen, kIOMemoryMapperNone);
++			if (herolte_gpu_present_physical((uint64_t)zpa, (uint32_t)w, (uint32_t)h)) {
++				copied += (uint64_t)fWidth * fHeight * 4;
++				s->release();
++				continue;
++			}
++		}
++#endif
+ 		if (src != 0 && bpe == 4 && fGpu && dx == 0 && dy == 0 &&
+ 		    w == (int32_t)fLogicalW && h == (int32_t)fLogicalH && gpuPresent(s, sx, sy, w, h)) {
+ 			copied += (uint64_t)fWidth * fHeight * 4;
+--- a/bsd/dev/herolte_gpu.c
++++ b/bsd/dev/herolte_gpu.c
+@@ -31,6 +31,7 @@
+ int herolte_gpu_present_slot(uint32_t id, uint64_t first_pa);
+ int herolte_gpu_present_map(uint32_t id, const uint64_t *pages, unsigned n);
+ bool herolte_gpu_present_draw(int s, uint32_t off, uint32_t stride, uint32_t w, uint32_t h);
++bool herolte_gpu_present_physical(uint64_t pa, uint32_t w, uint32_t h);
+ bool herolte_fb_two_buffers(void);
+ void herolte_fb_primary(void);
+ /* User-space GPU jobs, for iokit/Kernel/arm/HeroGPU.cpp. */
+@@ -2142,6 +2143,19 @@
+ }
+ 
+ int
++bool
++herolte_gpu_present_physical(uint64_t pa, uint32_t w, uint32_t h)
++{
++	if (hfb_state != 1 || hvg_state != 1 || w != hvg_w || h != hvg_h) {
++		return false;
++	}
++	if (hg_rd(hfb_idma, 0xb74) != (uint32_t)pa) {
++		hg_wr(hfb_idma, 0x74, (uint32_t)pa);
++		hg_wr(hfb_idma, 0x1c, 1);
++	}
++	return true;
++}
++
+ herolte_gpu_present_map(uint32_t id, const uint64_t *pages, unsigned n)
+ {
+ 	lck_mtx_lock(hg_mtx);
