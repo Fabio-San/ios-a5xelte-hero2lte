@@ -8,7 +8,7 @@
  
  /* Wait (bounded) for AS0 to finish its command. */
  static bool
-@@ -2079,6 +2080,32 @@
+@@ -2081,6 +2082,32 @@
  	if (++hgp_frames <= 3 || !ok) {
  		printf("HEROLTE GPU PRESENT: frame %llu %ux%u stride %u slot %d -> %s\n",
  		    hgp_frames, w, h, stride, s, ok ? "ok" : "failed");
@@ -41,7 +41,7 @@
  	}
  	return ok;
  }
-@@ -3911,6 +3938,7 @@
+@@ -3913,6 +3940,7 @@
  	PE_parse_boot_argn("herogpu_flush", &hg_flush_mode, sizeof(hg_flush_mode));
  	PE_parse_boot_argn("herogpu_sleep_us", &hg_sleep_us, sizeof(hg_sleep_us));
  	PE_parse_boot_argn("herogpu_sleep_present", &hg_sleep_present, sizeof(hg_sleep_present));

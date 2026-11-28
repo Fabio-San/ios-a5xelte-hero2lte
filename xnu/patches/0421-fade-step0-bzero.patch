@@ -1,6 +1,6 @@
 --- a/iokit/Kernel/arm/SweetFramebuffer.cpp
 +++ b/iokit/Kernel/arm/SweetFramebuffer.cpp
-@@ -561,6 +561,9 @@
+@@ -556,6 +556,9 @@
  		IOLockUnlock(fb->fLock);
  #if defined(ARM64_BOARD_CONFIG_HEROLTE)
  		if (step == 0) {
