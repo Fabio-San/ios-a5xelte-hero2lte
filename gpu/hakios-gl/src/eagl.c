@@ -359,6 +359,7 @@ static unsigned snap_frame;  /* 0385: glsnap=N dumps the display surface's top r
 static unsigned snaps_done;
 static int sb_clear;     /* 0387: glsbcbar=1 clears the status-bar band at frame start */
 static int dumped_mua;
+static int keep_discard;   /* 0425: glkeepdiscard=1 keeps tiles of IOSurface targets */
 
 /* 0383: true when this draw belongs to CoreAnimation's backdrop-blur chain. */
 static bool
@@ -1623,6 +1624,24 @@ my_glClear(void *context, GLbitfield mask)
 		glClear(mask);
 	}
 	EAGL_LEAVE(e, 0x58);
+}
+
+/* 0425: on a tile-based GPU an invalidate/discard tells Panfrost the tile can
+ * be thrown away. CoreAnimation only repaints part of the frame, so the
+ * untouched pixels of an IOSurface render target then come from stale tile
+ * SRAM. glkeepdiscard=1 keeps the tiles for those targets and passes every
+ * other invalidate through. */
+static void
+my_glInvalidateFramebuffer(void *context, GLenum target, GLsizei numAttachments, const GLenum *attachments)
+{
+	struct eagl *e = context;
+	struct image *image;
+
+	EAGL_ENTER(e, 0x2000);
+	if (!keep_discard || e->colour == 0 || (image = image_of(e, e->colour)) == NULL || !image->target) {
+		glInvalidateFramebuffer(target, numAttachments, attachments);
+	}
+	EAGL_LEAVE(e, 0x2000);
 }
 
 /* While calls are written down: what a draw has left in the middle of what it drew into, and near its top. */
@@ -4856,6 +4875,7 @@ install(void)
 			}
 			shader_dump = strstr(arguments, "glshaderdump=1") != NULL;
 			zero_empty = strstr(arguments, "glzero_empty=1") != NULL;
+		keep_discard = strstr(arguments, "glkeepdiscard=1") != NULL;
 			sb_clear = strstr(arguments, "glsbcbar=1") != NULL;
 			{
 				const char *a = strstr(arguments, "glsnap=");

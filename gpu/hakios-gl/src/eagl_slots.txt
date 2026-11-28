@@ -403,7 +403,7 @@
 0x1fe8 - glDrawTexxvOES
 0x1ff0 - glDrawTexfOES
 0x1ff8 - glDrawTexfvOES
-0x2000 - glInvalidateFramebuffer glDiscardFramebufferEXT
+0x2000 * glInvalidateFramebuffer glDiscardFramebufferEXT
 0x2008 * glFramebufferParameteriAPPLE
 0x2010 - glGetFramebufferParameteriAPPLE
 0x2018 - glResolveMultisampleFramebufferAPPLE
