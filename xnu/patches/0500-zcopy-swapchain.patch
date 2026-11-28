@@ -73,7 +73,15 @@
  #endif
 --- a/iokit/Kernel/arm/SweetFramebuffer.cpp
 +++ b/iokit/Kernel/arm/SweetFramebuffer.cpp
-@@ -994,6 +994,17 @@
+@@ -70,6 +70,7 @@
+ extern "C" int herolte_gpu_present_slot(uint32_t id, uint64_t first_pa);
+ extern "C" int herolte_gpu_present_map(uint32_t id, const uint64_t *pages, unsigned n);
+ extern "C" bool herolte_gpu_present_draw(int s, uint32_t off, uint32_t stride, uint32_t w, uint32_t h);
++extern "C" bool herolte_gpu_present_physical(uint64_t pa, uint32_t w, uint32_t h);
+ #define SWEET_FB_GPU_MAX_PAGES 2048     /* one 8 MiB GPU slot */
+ /* Two panel buffers (herofb2): the Mali draws into the one not shown; the CPU writes only the first, shown first. */
+ extern "C" bool herolte_fb_two_buffers(void);
+@@ -994,6 +995,17 @@
  		}
  #endif
  #if defined(ARM64_BOARD_CONFIG_HEROLTE)
@@ -101,10 +109,12 @@
  bool herolte_fb_two_buffers(void);
  void herolte_fb_primary(void);
  /* User-space GPU jobs, for iokit/Kernel/arm/HeroGPU.cpp. */
-@@ -2142,6 +2143,19 @@
- }
- 
- int
+@@ -2139,6 +2140,19 @@
+ 		}
+ 	}
+ 	return ok;
++}
++
 +bool
 +herolte_gpu_present_physical(uint64_t pa, uint32_t w, uint32_t h)
 +{
@@ -116,8 +126,6 @@
 +		hg_wr(hfb_idma, 0x1c, 1);
 +	}
 +	return true;
-+}
-+
- herolte_gpu_present_map(uint32_t id, const uint64_t *pages, unsigned n)
- {
- 	lck_mtx_lock(hg_mtx);
+ }
+ 
+ int
